@@ -1,7 +1,7 @@
 {
   "name": "neovate-code-desktop",
   "version": "0.1.0",
-  "description": "Neovate Code Desktop - Electron boilerplate",
+  "description": "Neovate Code Desktop",
   "main": "dist/main/main/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
@@ -21,9 +21,16 @@
     "neovate",
     "desktop"
   ],
-  "author": {
-    "name": "Neovate AI",
-    "email": "hello@neovateai.com"
+  "authors": [
+    "chencheng <sorrycc@gmail.com> (https://github.com/sorrycc)"
+  ],
+  "homepage": "https://neovateai.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neovateai/neovate-code/"
+  },
+  "bugs": {
+    "url": "https://github.com/neovateai/neovate-code/issues"
   },
   "engines": {
     "node": ">=20.0.0 <23.0.0",
@@ -44,7 +51,6 @@
     "lint-staged": "^16.2.6",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
-    "typescript": "^5.3.3",
     "vite": "^5.0.10"
   },
   "dependencies": {
@@ -89,5 +95,6 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css}": "biome format --write"
-  }
+  },
+  "packageManager": "pnpm@10.13.1"
 }
