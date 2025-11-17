@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import WebSocketComponent from './WebSocketComponent.example';
 
 declare global {
   interface Window {
@@ -131,6 +132,11 @@ function App() {
           </ul>
         </div>
       )}
+
+      <div className="mt-8 p-4 border rounded bg-gray-50">
+        <h2 className="text-xl font-bold mb-2">WebSocket Connection</h2>
+        <WebSocketComponent />
+      </div>
     </div>
   );
 }
