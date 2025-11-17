@@ -1,26 +1,77 @@
 import { create } from 'zustand';
 import { WebSocketTransport } from './client/transport/WebSocketTransport';
 import { MessageBus } from './client/messaging/MessageBus';
+import type {
+  RepoData,
+  WorkspaceData,
+  SessionData,
+  Message,
+} from './client/types/entities';
 
 interface StoreState {
+  // WebSocket connection state
   state: 'disconnected' | 'connecting' | 'connected' | 'error';
   transport: WebSocketTransport | null;
   messageBus: MessageBus | null;
+
+  // Entity data
+  repos: Record<string, RepoData>;
+  workspaces: Record<string, WorkspaceData>;
+  sessions: Record<string, SessionData>;
+
+  // UI state
+  selectedRepoPath: string | null;
+  selectedWorkspaceId: string | null;
+  selectedSessionId: string | null;
 }
 
 interface StoreActions {
+  // WebSocket actions
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   request: <T, R>(method: string, params: T) => Promise<R>;
   onEvent: <T>(event: string, handler: (data: T) => void) => void;
+
+  // Entity CRUD operations
+  // Repos
+  addRepo: (repo: RepoData) => void;
+  updateRepo: (path: string, updates: Partial<RepoData>) => void;
+  deleteRepo: (path: string) => void;
+
+  // Workspaces
+  addWorkspace: (workspace: WorkspaceData) => void;
+  updateWorkspace: (id: string, updates: Partial<WorkspaceData>) => void;
+  deleteWorkspace: (id: string) => void;
+
+  // Sessions
+  addSession: (session: SessionData) => void;
+  updateSession: (id: string, updates: Partial<SessionData>) => void;
+  deleteSession: (id: string) => void;
+  addMessage: (sessionId: string, message: Omit<Message, 'id'>) => void;
+
+  // UI Selections
+  selectRepo: (path: string | null) => void;
+  selectWorkspace: (id: string | null) => void;
+  selectSession: (id: string | null) => void;
 }
 
 type Store = StoreState & StoreActions;
 
 const useStore = create<Store>()((set, get) => ({
+  // Initial WebSocket state
   state: 'disconnected',
   transport: null,
   messageBus: null,
+
+  // Initial entity data
+  repos: {},
+  workspaces: {},
+  sessions: {},
+
+  // Initial UI state
+  selectedRepoPath: null,
+  selectedWorkspaceId: null,
+  selectedSessionId: null,
 
   connect: async () => {
     const { transport } = get();
@@ -102,6 +153,371 @@ const useStore = create<Store>()((set, get) => ({
     }
 
     messageBus.onEvent<T>(event, handler);
+  },
+
+  // Entity CRUD operations
+  // Repos
+  addRepo: (repo: RepoData) => {
+    set((state) => ({
+      repos: {
+        ...state.repos,
+        [repo.path]: repo,
+      },
+    }));
+  },
+
+  updateRepo: (path: string, updates: Partial<RepoData>) => {
+    set((state) => ({
+      repos: {
+        ...state.repos,
+        [path]: {
+          ...state.repos[path],
+          ...updates,
+        },
+      },
+    }));
+  },
+
+  deleteRepo: (path: string) => {
+    set((state) => {
+      // Get the repo to delete
+      const repo = state.repos[path];
+      if (!repo) return state;
+
+      // Delete all workspaces for this repo (cascading)
+      const newWorkspaces = { ...state.workspaces };
+      const newSessions = { ...state.sessions };
+
+      repo.workspaceIds.forEach((workspaceId) => {
+        const workspace = state.workspaces[workspaceId];
+        if (workspace) {
+          // Delete all sessions for this workspace (cascading)
+          workspace.sessionIds.forEach((sessionId) => {
+            delete newSessions[sessionId];
+          });
+
+          delete newWorkspaces[workspaceId];
+        }
+      });
+
+      // Delete the repo
+      const newRepos = { ...state.repos };
+      delete newRepos[path];
+
+      // Clear UI selections if needed
+      let selectedRepoPath = state.selectedRepoPath;
+      let selectedWorkspaceId = state.selectedWorkspaceId;
+      let selectedSessionId = state.selectedSessionId;
+
+      if (selectedRepoPath === path) {
+        selectedRepoPath = null;
+        selectedWorkspaceId = null;
+        selectedSessionId = null;
+      }
+
+      return {
+        repos: newRepos,
+        workspaces: newWorkspaces,
+        sessions: newSessions,
+        selectedRepoPath,
+        selectedWorkspaceId,
+        selectedSessionId,
+      };
+    });
+  },
+
+  // Workspaces
+  addWorkspace: (workspace: WorkspaceData) => {
+    set((state) => {
+      // Add the workspace
+      const newWorkspaces = {
+        ...state.workspaces,
+        [workspace.id]: workspace,
+      };
+
+      // Add the workspace ID to the parent repo
+      const repo = state.repos[workspace.repoPath];
+      if (repo && !repo.workspaceIds.includes(workspace.id)) {
+        const newRepos = {
+          ...state.repos,
+          [workspace.repoPath]: {
+            ...repo,
+            workspaceIds: [...repo.workspaceIds, workspace.id],
+          },
+        };
+
+        return {
+          repos: newRepos,
+          workspaces: newWorkspaces,
+        };
+      }
+
+      return {
+        workspaces: newWorkspaces,
+      };
+    });
+  },
+
+  updateWorkspace: (id: string, updates: Partial<WorkspaceData>) => {
+    set((state) => ({
+      workspaces: {
+        ...state.workspaces,
+        [id]: {
+          ...state.workspaces[id],
+          ...updates,
+        },
+      },
+    }));
+  },
+
+  deleteWorkspace: (id: string) => {
+    set((state) => {
+      // Get the workspace to delete
+      const workspace = state.workspaces[id];
+      if (!workspace) return state;
+
+      // Delete all sessions for this workspace (cascading)
+      const newSessions = { ...state.sessions };
+      workspace.sessionIds.forEach((sessionId) => {
+        delete newSessions[sessionId];
+      });
+
+      // Remove the workspace ID from the parent repo
+      const repo = state.repos[workspace.repoPath];
+      if (repo) {
+        const newRepos = {
+          ...state.repos,
+          [workspace.repoPath]: {
+            ...repo,
+            workspaceIds: repo.workspaceIds.filter((wid) => wid !== id),
+          },
+        };
+
+        // Delete the workspace
+        const newWorkspaces = { ...state.workspaces };
+        delete newWorkspaces[id];
+
+        // Clear UI selections if needed
+        let selectedWorkspaceId = state.selectedWorkspaceId;
+        let selectedSessionId = state.selectedSessionId;
+
+        if (selectedWorkspaceId === id) {
+          selectedWorkspaceId = null;
+          selectedSessionId = null;
+        }
+
+        return {
+          repos: newRepos,
+          workspaces: newWorkspaces,
+          sessions: newSessions,
+          selectedWorkspaceId,
+          selectedSessionId,
+        };
+      }
+
+      // If no repo found, just delete the workspace
+      const newWorkspaces = { ...state.workspaces };
+      delete newWorkspaces[id];
+
+      // Clear UI selections if needed
+      let selectedWorkspaceId = state.selectedWorkspaceId;
+      let selectedSessionId = state.selectedSessionId;
+
+      if (selectedWorkspaceId === id) {
+        selectedWorkspaceId = null;
+        selectedSessionId = null;
+      }
+
+      return {
+        workspaces: newWorkspaces,
+        sessions: newSessions,
+        selectedWorkspaceId,
+        selectedSessionId,
+      };
+    });
+  },
+
+  // Sessions
+  addSession: (session: SessionData) => {
+    set((state) => {
+      // Add the session
+      const newSessions = {
+        ...state.sessions,
+        [session.id]: session,
+      };
+
+      // Add the session ID to the parent workspace
+      const workspace = state.workspaces[session.workspaceId];
+      if (workspace && !workspace.sessionIds.includes(session.id)) {
+        const newWorkspaces = {
+          ...state.workspaces,
+          [session.workspaceId]: {
+            ...workspace,
+            sessionIds: [...workspace.sessionIds, session.id],
+          },
+        };
+
+        return {
+          workspaces: newWorkspaces,
+          sessions: newSessions,
+        };
+      }
+
+      return {
+        sessions: newSessions,
+      };
+    });
+  },
+
+  updateSession: (id: string, updates: Partial<SessionData>) => {
+    set((state) => ({
+      sessions: {
+        ...state.sessions,
+        [id]: {
+          ...state.sessions[id],
+          ...updates,
+        },
+      },
+    }));
+  },
+
+  deleteSession: (id: string) => {
+    set((state) => {
+      // Get the session to delete
+      const session = state.sessions[id];
+      if (!session) return state;
+
+      // Remove the session ID from the parent workspace
+      const workspace = state.workspaces[session.workspaceId];
+      if (workspace) {
+        const newWorkspaces = {
+          ...state.workspaces,
+          [session.workspaceId]: {
+            ...workspace,
+            sessionIds: workspace.sessionIds.filter((sid) => sid !== id),
+          },
+        };
+
+        // Delete the session
+        const newSessions = { ...state.sessions };
+        delete newSessions[id];
+
+        // Clear UI selection if needed
+        let selectedSessionId = state.selectedSessionId;
+        if (selectedSessionId === id) {
+          selectedSessionId = null;
+        }
+
+        return {
+          workspaces: newWorkspaces,
+          sessions: newSessions,
+          selectedSessionId,
+        };
+      }
+
+      // If no workspace found, just delete the session
+      const newSessions = { ...state.sessions };
+      delete newSessions[id];
+
+      // Clear UI selection if needed
+      let selectedSessionId = state.selectedSessionId;
+      if (selectedSessionId === id) {
+        selectedSessionId = null;
+      }
+
+      return {
+        sessions: newSessions,
+        selectedSessionId,
+      };
+    });
+  },
+
+  addMessage: (sessionId: string, message: Omit<Message, 'id'>) => {
+    set((state) => {
+      const session = state.sessions[sessionId];
+      if (!session) return state;
+
+      const newMessage: Message = {
+        ...message,
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: Date.now(),
+      };
+
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...session,
+            messages: [...session.messages, newMessage],
+            metadata: {
+              ...session.metadata,
+              updatedAt: Date.now(),
+            },
+          },
+        },
+      };
+    });
+  },
+
+  // UI Selections
+  selectRepo: (path: string | null) => {
+    set((state) => {
+      // Validate that the repo exists if path is not null
+      if (path !== null && !state.repos[path]) {
+        return state;
+      }
+
+      return {
+        selectedRepoPath: path,
+        // Reset child selections when parent changes
+        selectedWorkspaceId: null,
+        selectedSessionId: null,
+      };
+    });
+  },
+
+  selectWorkspace: (id: string | null) => {
+    set((state) => {
+      // Validate that the workspace exists and belongs to the selected repo if both are set
+      if (id !== null) {
+        const workspace = state.workspaces[id];
+        if (!workspace) return state;
+
+        if (
+          state.selectedRepoPath &&
+          workspace.repoPath !== state.selectedRepoPath
+        ) {
+          return state;
+        }
+      }
+
+      return {
+        selectedWorkspaceId: id,
+        // Reset child selection when parent changes
+        selectedSessionId: null,
+      };
+    });
+  },
+
+  selectSession: (id: string | null) => {
+    set((state) => {
+      // Validate that the session exists and belongs to the selected workspace if both are set
+      if (id !== null) {
+        const session = state.sessions[id];
+        if (!session) return state;
+
+        if (
+          state.selectedWorkspaceId &&
+          session.workspaceId !== state.selectedWorkspaceId
+        ) {
+          return state;
+        }
+      }
+
+      return {
+        selectedSessionId: id,
+      };
+    });
   },
 }));
 
