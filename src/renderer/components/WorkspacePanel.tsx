@@ -46,10 +46,12 @@ export const WorkspacePanel = ({
   workspace,
   emptyStateType,
   onSendMessage,
+  messages,
 }: {
   workspace: WorkspaceData | null;
   emptyStateType: 'no-repos' | 'no-workspace' | null;
   onSendMessage: (sessionId: string, content: string) => Promise<void>;
+  messages: Message[];
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -83,11 +85,11 @@ export const WorkspacePanel = ({
   }, [workspace, activeSessionId]);
 
   const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading || !activeSessionId) return;
+    if (!content.trim() || isLoading) return;
 
     setIsLoading(true);
     try {
-      await onSendMessage(activeSessionId, content);
+      await onSendMessage(activeSessionId || '', content);
       setInputValue('');
     } finally {
       setIsLoading(false);
@@ -130,7 +132,7 @@ export const WorkspacePanel = ({
     allSessions,
     activeSessionId,
     setActiveSessionId: handleSetActiveSessionId,
-    messages: activeSession?.messages || [],
+    messages,
     inputValue,
     isLoading,
     sendMessage,
@@ -287,15 +289,15 @@ WorkspacePanel.WorkspaceInfo = function WorkspaceInfo() {
 WorkspacePanel.Messages = function Messages() {
   const { messages, activeSessionId } = useWorkspaceContext();
 
-  if (!activeSessionId) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center" style={{ color: '#999' }}>
-          Select a session to view messages
-        </div>
-      </div>
-    );
-  }
+  // if (!activeSessionId) {
+  //   return (
+  //     <div className="flex-1 flex items-center justify-center">
+  //       <div className="text-center" style={{ color: '#999' }}>
+  //         Select a session to view messages
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
@@ -306,7 +308,7 @@ WorkspacePanel.Messages = function Messages() {
       ) : (
         <div className="space-y-4">
           {messages.map((message) => (
-            <WorkspacePanel.Message key={message.id} message={message} />
+            <WorkspacePanel.Message key={message.uuid} message={message} />
           ))}
         </div>
       )}
@@ -344,7 +346,9 @@ WorkspacePanel.Message = function Message({ message }: { message: Message }) {
             })}
           </span>
         </div>
-        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+        <div className="text-sm whitespace-pre-wrap">
+          {JSON.stringify(message)}
+        </div>
       </div>
     </div>
   );

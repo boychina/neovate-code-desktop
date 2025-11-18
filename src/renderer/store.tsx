@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { WebSocketTransport } from './client/transport/WebSocketTransport';
 import { MessageBus } from './client/messaging/MessageBus';
+import { randomUUID } from './utils/uuid';
 import type {
   RepoData,
   WorkspaceData,
@@ -13,12 +14,18 @@ interface StoreState {
   state: 'disconnected' | 'connecting' | 'connected' | 'error';
   transport: WebSocketTransport | null;
   messageBus: MessageBus | null;
+  initialized: boolean;
 
   // Entity data
   repos: Record<string, RepoData>;
   workspaces: Record<string, WorkspaceData>;
   sessions: Record<string, SessionData>;
   messages: Message[];
+
+  // Processing state
+  status: 'idle' | 'processing';
+  processingStartTime: number;
+  processingToken: number;
 
   // UI state
   selectedRepoPath: string | null;
@@ -32,6 +39,8 @@ interface StoreActions {
   disconnect: () => Promise<void>;
   request: <T, R>(method: string, params: T) => Promise<R>;
   onEvent: <T>(event: string, handler: (data: T) => void) => void;
+  initialize: () => Promise<void>;
+  sendMessage: (params: { message: string }) => Promise<void>;
 
   // Entity CRUD operations
   // Repos
@@ -48,7 +57,7 @@ interface StoreActions {
   addSession: (session: SessionData) => void;
   updateSession: (id: string, updates: Partial<SessionData>) => void;
   deleteSession: (id: string) => void;
-  addMessage: (sessionId: string, message: Omit<Message, 'id'>) => void;
+  addMessage: (message: Omit<Message, 'id'>) => void;
   setMessages: (messages: Message[]) => void;
 
   // UI Selections
@@ -64,12 +73,18 @@ const useStore = create<Store>()((set, get) => ({
   state: 'disconnected',
   transport: null,
   messageBus: null,
+  initialized: false,
 
   // Initial entity data
   repos: {},
   workspaces: {},
   sessions: {},
   messages: [],
+
+  // Initial processing state
+  status: 'idle',
+  processingStartTime: 0,
+  processingToken: 0,
 
   // Initial UI state
   selectedRepoPath: null,
@@ -156,6 +171,114 @@ const useStore = create<Store>()((set, get) => ({
     }
 
     messageBus.onEvent<T>(event, handler);
+  },
+
+  initialize: async () => {
+    const { initialized, onEvent, addMessage } = get();
+
+    // Only initialize once
+    if (initialized) {
+      console.log('Already initialized, skipping');
+      return;
+    }
+
+    console.log('Initializing event handlers');
+
+    onEvent('message', (data: any) => {
+      console.log('message', data);
+      if (data.message) {
+        addMessage(data.message);
+      }
+    });
+
+    onEvent('chunk', (data: any) => {
+      console.log('chunk', data);
+    });
+
+    onEvent('streamResult', (data: any) => {
+      console.log('streamResult', data);
+    });
+
+    set({ initialized: true });
+  },
+
+  sendMessage: async (params: { message: string }) => {
+    const {
+      selectedSessionId,
+      selectedWorkspaceId,
+      sessions,
+      workspaces,
+      request,
+      selectSession,
+    } = get();
+
+    let sessionId = selectedSessionId;
+
+    if (!selectedWorkspaceId) {
+      throw new Error('No workspace selected to create session');
+    }
+
+    if (!sessionId) {
+      const newSessionId = randomUUID();
+
+      // const newSession: SessionData = {
+      //   id: newSessionId,
+      //   workspaceId: selectedWorkspaceId,
+      //   messages: [],
+      //   context: {
+      //     files: [],
+      //     codeRefs: [],
+      //   },
+      //   state: {
+      //     pendingOperations: [],
+      //     activeTasks: [],
+      //   },
+      //   metadata: {
+      //     createdAt: Date.now(),
+      //     updatedAt: Date.now(),
+      //     status: 'active',
+      //     tags: [],
+      //     labels: [],
+      //   },
+      // };
+
+      // addSession(newSession);
+      selectSession(newSessionId);
+      sessionId = newSessionId;
+    }
+
+    // const session = sessions[sessionId];
+    // if (!session) {
+    //   throw new Error(`Session ${sessionId} not found`);
+    // }
+
+    const workspace = workspaces[selectedWorkspaceId];
+    if (!workspace) {
+      throw new Error(`Workspace ${selectedWorkspaceId} not found`);
+    }
+
+    const cwd = workspace.worktreePath;
+
+    set({
+      status: 'processing',
+      processingStartTime: Date.now(),
+      processingToken: 0,
+    });
+
+    try {
+      await request('session.send', {
+        message: params.message,
+        sessionId,
+        cwd,
+        planMode: false,
+      });
+    } finally {
+      set({
+        status: 'idle',
+        processingStartTime: 0,
+        processingToken: 0,
+      });
+    }
   },
 
   // Entity CRUD operations
@@ -435,19 +558,19 @@ const useStore = create<Store>()((set, get) => ({
     });
   },
 
-  addMessage: (sessionId: string, message: Omit<Message, 'id'>) => {
+  addMessage: (message: Message) => {
     set((state) => {
-      const session = state.sessions[sessionId];
-      if (!session) return state;
+      // const session = state.sessions[sessionId];
+      // if (!session) return state;
 
-      const newMessage: Message = {
-        ...message,
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: Date.now(),
-      };
+      // const newMessage: Message = {
+      //   ...message,
+      //   id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      //   timestamp: Date.now(),
+      // };
 
       return {
-        messages: [...state.messages, newMessage],
+        messages: [...state.messages, message],
       };
     });
   },
@@ -498,18 +621,18 @@ const useStore = create<Store>()((set, get) => ({
 
   selectSession: (id: string | null) => {
     set((state) => {
-      // Validate that the session exists and belongs to the selected workspace if both are set
-      if (id !== null) {
-        const session = state.sessions[id];
-        if (!session) return state;
+      // // Validate that the session exists and belongs to the selected workspace if both are set
+      // if (id !== null) {
+      //   const session = state.sessions[id];
+      //   if (!session) return state;
 
-        if (
-          state.selectedWorkspaceId &&
-          session.workspaceId !== state.selectedWorkspaceId
-        ) {
-          return state;
-        }
-      }
+      //   if (
+      //     state.selectedWorkspaceId &&
+      //     session.workspaceId !== state.selectedWorkspaceId
+      //   ) {
+      //     return state;
+      //   }
+      // }
 
       return {
         selectedSessionId: id,

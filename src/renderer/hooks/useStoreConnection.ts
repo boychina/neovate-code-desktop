@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
 
 /**
@@ -9,11 +9,26 @@ import { useStore } from '../store';
  */
 export function useStoreConnection() {
   const connect = useStore((state) => state.connect);
+  const initialize = useStore((state) => state.initialize);
   const connectionState = useStore((state) => state.state);
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
-    connect();
-  }, []); // Empty deps - runs once on mount
+    // Prevent running multiple times (e.g., in React Strict Mode)
+    if (hasInitialized.current) {
+      console.log('useStoreConnection: Already initialized, skipping');
+      return;
+    }
+
+    hasInitialized.current = true;
+    console.log('useStoreConnection: Initializing');
+
+    const init = async () => {
+      await connect();
+      await initialize();
+    };
+    init();
+  }, [connect, initialize]);
 
   return connectionState;
 }

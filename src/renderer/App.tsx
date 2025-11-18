@@ -15,7 +15,8 @@ function App() {
     selectedWorkspaceId,
     selectRepo,
     selectWorkspace,
-    addMessage,
+    sendMessage,
+    messages,
   } = useStore();
 
   // Get the selected workspace
@@ -23,24 +24,8 @@ function App() {
     ? workspaces[selectedWorkspaceId]
     : null;
 
-  // Mock function to send a message
   const handleSendMessage = async (sessionId: string, content: string) => {
-    // In a real implementation, this would send the message via WebSocket
-    // For now, we'll just add it directly to the store
-    addMessage(sessionId, {
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-    });
-
-    // Simulate a response after a short delay
-    setTimeout(() => {
-      addMessage(sessionId, {
-        role: 'assistant',
-        content: `Echo: ${content}`,
-        timestamp: Date.now(),
-      });
-    }, 1000);
+    await sendMessage({ message: content });
   };
 
   // Mock function to execute a command
@@ -72,6 +57,7 @@ function App() {
         selectedRepoPath={selectedRepoPath}
         selectedWorkspaceId={selectedWorkspaceId}
         selectedWorkspace={selectedWorkspace}
+        messages={messages}
         onSelectRepo={selectRepo}
         onSelectWorkspace={selectWorkspace}
         onSendMessage={handleSendMessage}

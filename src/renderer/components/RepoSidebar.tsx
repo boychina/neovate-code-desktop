@@ -12,7 +12,11 @@ import {
   DatabaseIcon,
   CloudIcon,
 } from '@hugeicons/core-free-icons';
-import type { RepoData, WorkspaceData } from '../client/types/entities';
+import type {
+  Message,
+  RepoData,
+  WorkspaceData,
+} from '../client/types/entities';
 import { useStore } from '../store';
 import {
   Accordion,

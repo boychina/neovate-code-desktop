@@ -1,5 +1,5 @@
 export interface Message {
-  id: string;
+  uuid: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
