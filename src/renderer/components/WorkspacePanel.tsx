@@ -359,7 +359,7 @@ WorkspacePanel.ChatInput = function ChatInput() {
     sendMessage(inputValue);
   };
 
-  const isDisabled = !activeSessionId || isLoading;
+  const isDisabled = isLoading;
 
   return (
     <div
@@ -375,7 +375,7 @@ WorkspacePanel.ChatInput = function ChatInput() {
             placeholder={
               activeSessionId
                 ? 'Type your message...'
-                : 'Select a session to send messages'
+                : 'Type your message with a new session...'
             }
             className="w-full rounded-lg px-4 py-2 pr-12 focus:outline-none focus:ring-2"
             style={{
@@ -413,9 +413,9 @@ WorkspacePanel.Toolbar = function Toolbar() {
 };
 
 WorkspacePanel.SendButton = function SendButton() {
-  const { inputValue, isLoading, activeSessionId } = useWorkspaceContext();
+  const { inputValue, isLoading } = useWorkspaceContext();
 
-  const canSend = inputValue.trim() && !isLoading && activeSessionId;
+  const canSend = inputValue.trim() && !isLoading;
 
   return (
     <button
