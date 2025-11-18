@@ -18,6 +18,7 @@ interface StoreState {
   repos: Record<string, RepoData>;
   workspaces: Record<string, WorkspaceData>;
   sessions: Record<string, SessionData>;
+  messages: Message[];
 
   // UI state
   selectedRepoPath: string | null;
@@ -48,6 +49,7 @@ interface StoreActions {
   updateSession: (id: string, updates: Partial<SessionData>) => void;
   deleteSession: (id: string) => void;
   addMessage: (sessionId: string, message: Omit<Message, 'id'>) => void;
+  setMessages: (messages: Message[]) => void;
 
   // UI Selections
   selectRepo: (path: string | null) => void;
@@ -67,6 +69,7 @@ const useStore = create<Store>()((set, get) => ({
   repos: {},
   workspaces: {},
   sessions: {},
+  messages: [],
 
   // Initial UI state
   selectedRepoPath: null,
@@ -444,19 +447,13 @@ const useStore = create<Store>()((set, get) => ({
       };
 
       return {
-        sessions: {
-          ...state.sessions,
-          [sessionId]: {
-            ...session,
-            messages: [...session.messages, newMessage],
-            metadata: {
-              ...session.metadata,
-              updatedAt: Date.now(),
-            },
-          },
-        },
+        messages: [...state.messages, newMessage],
       };
     });
+  },
+
+  setMessages: (messages: Message[]) => {
+    set({ messages });
   },
 
   // UI Selections
