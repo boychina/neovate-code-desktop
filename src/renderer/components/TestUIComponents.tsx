@@ -83,6 +83,12 @@ import {
   AccordionItem,
   AccordionTrigger,
   AccordionPanel,
+  Autocomplete,
+  AutocompleteInput,
+  AutocompletePopup,
+  AutocompleteList,
+  AutocompleteItem,
+  AutocompleteEmpty,
 } from './ui';
 import {
   UserIcon,
@@ -114,6 +120,14 @@ export function TestUIComponents() {
   const [accordionValue, setAccordionValue] = useState<string[]>(['item-1']);
 
   const comboboxItems = [
+    { value: 'apple', label: 'Apple' },
+    { value: 'banana', label: 'Banana' },
+    { value: 'orange', label: 'Orange' },
+    { value: 'grape', label: 'Grape' },
+    { value: 'mango', label: 'Mango' },
+  ];
+
+  const autocompleteItems = [
     { value: 'apple', label: 'Apple' },
     { value: 'banana', label: 'Banana' },
     { value: 'orange', label: 'Orange' },
@@ -356,6 +370,52 @@ export function TestUIComponents() {
                 </ComboboxList>
               </ComboboxPopup>
             </Combobox>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Autocomplete Section */}
+        <section className="space-y-4">
+          <h2 className="text-2xl font-semibold">Autocomplete</h2>
+          <div className="max-w-md space-y-8">
+            <div className="space-y-2">
+              <h3 className="text-lg font-medium">Basic Autocomplete</h3>
+              <Autocomplete items={autocompleteItems}>
+                <AutocompleteInput placeholder="Search fruits..." />
+                <AutocompletePopup>
+                  <AutocompleteEmpty>No results found.</AutocompleteEmpty>
+                  <AutocompleteList>
+                    {(item) => (
+                      <AutocompleteItem key={item.value} value={item}>
+                        {item.label}
+                      </AutocompleteItem>
+                    )}
+                  </AutocompleteList>
+                </AutocompletePopup>
+              </Autocomplete>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-medium">With Trigger and Clear</h3>
+              <Autocomplete items={autocompleteItems}>
+                <AutocompleteInput
+                  placeholder="Search with controls..."
+                  showTrigger
+                  showClear
+                />
+                <AutocompletePopup>
+                  <AutocompleteEmpty>No results found.</AutocompleteEmpty>
+                  <AutocompleteList>
+                    {(item) => (
+                      <AutocompleteItem key={item.value} value={item.value}>
+                        {item.label}
+                      </AutocompleteItem>
+                    )}
+                  </AutocompleteList>
+                </AutocompletePopup>
+              </Autocomplete>
+            </div>
           </div>
         </section>
 

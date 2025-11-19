@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from './store';
 import { Button } from './components/ui/button';
+import { TestUIComponents } from './components/TestUIComponents';
 
 const TestComponent = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -91,6 +92,9 @@ const TestComponent = () => {
           </div>
         </div>
       )}
+      <div style={{ marginTop: '16px' }}>
+        <TestUIComponents />
+      </div>
     </div>
   );
 };
