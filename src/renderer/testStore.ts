@@ -9,7 +9,7 @@ const testStore = () => {
   console.log('Initial store state:', {
     repos: Object.keys(store.repos),
     workspaces: Object.keys(store.workspaces),
-    sessions: Object.keys(store.sessions),
+
     selectedRepoPath: store.selectedRepoPath,
     selectedWorkspaceId: store.selectedWorkspaceId,
     selectedSessionId: store.selectedSessionId,
@@ -36,7 +36,6 @@ const testStore = () => {
   console.log('Store state after adding repo:', {
     repos: Object.keys(store.repos),
     workspaces: Object.keys(store.workspaces),
-    sessions: Object.keys(store.sessions),
   });
 
   console.log('Repo in store:', store.repos['/test/repo']);

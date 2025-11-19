@@ -30,7 +30,7 @@ describe('Store', () => {
 
     store.addRepo(repo);
 
-    expect(store.repos[repo.path]).toEqual(repo);
+    expect(useStore.getState().repos[repo.path]).toEqual(repo);
   });
 
   it('should add and retrieve a workspace', () => {
@@ -77,80 +77,10 @@ describe('Store', () => {
 
     store.addWorkspace(workspace);
 
-    expect(store.workspaces[workspace.id]).toEqual(workspace);
-    expect(store.repos[repo.path].workspaceIds).toContain(workspace.id);
-  });
-
-  it('should add and retrieve a session', () => {
-    const store = useStore.getState();
-
-    // Add a repo
-    const repo = {
-      path: '/test/repo',
-      name: 'Test Repo',
-      workspaceIds: [],
-      metadata: {
-        lastAccessed: Date.now(),
-      },
-      gitRemote: {
-        originUrl: 'https://github.com/test/repo',
-        defaultBranch: 'main',
-        syncStatus: 'synced' as const,
-      },
-    };
-
-    store.addRepo(repo);
-
-    // Add a workspace
-    const workspace = {
-      id: 'workspace-1',
-      repoPath: '/test/repo',
-      branch: 'main',
-      worktreePath: '/test/repo',
-      sessionIds: [],
-      gitState: {
-        currentCommit: 'abc123',
-        isDirty: false,
-        pendingChanges: [],
-      },
-      metadata: {
-        createdAt: Date.now(),
-        description: 'Test workspace',
-        status: 'active' as const,
-      },
-      context: {
-        activeFiles: [],
-      },
-    };
-
-    store.addWorkspace(workspace);
-
-    // Add a session
-    const session = {
-      id: 'session-1',
-      workspaceId: 'workspace-1',
-      messages: [],
-      context: {
-        files: [],
-        codeRefs: [],
-      },
-      state: {
-        pendingOperations: [],
-        activeTasks: [],
-      },
-      metadata: {
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        status: 'active' as const,
-        tags: [],
-        labels: [],
-      },
-    };
-
-    store.addSession(session);
-
-    expect(store.sessions[session.id]).toEqual(session);
-    expect(store.workspaces[workspace.id].sessionIds).toContain(session.id);
+    expect(useStore.getState().workspaces[workspace.id]).toEqual(workspace);
+    expect(useStore.getState().repos[repo.path].workspaceIds).toContain(
+      workspace.id,
+    );
   });
 
   it('should cascade delete repos', () => {
@@ -197,36 +127,11 @@ describe('Store', () => {
 
     store.addWorkspace(workspace);
 
-    // Add a session
-    const session = {
-      id: 'session-1',
-      workspaceId: 'workspace-1',
-      messages: [],
-      context: {
-        files: [],
-        codeRefs: [],
-      },
-      state: {
-        pendingOperations: [],
-        activeTasks: [],
-      },
-      metadata: {
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        status: 'active' as const,
-        tags: [],
-        labels: [],
-      },
-    };
-
-    store.addSession(session);
-
     // Delete the repo (should cascade)
     store.deleteRepo('/test/repo');
 
-    expect(store.repos['/test/repo']).toBeUndefined();
-    expect(store.workspaces['workspace-1']).toBeUndefined();
-    expect(store.sessions['session-1']).toBeUndefined();
+    expect(useStore.getState().repos['/test/repo']).toBeUndefined();
+    expect(useStore.getState().workspaces['workspace-1']).toBeUndefined();
   });
 
   it('should handle UI selections', () => {
@@ -250,7 +155,7 @@ describe('Store', () => {
     store.addRepo(repo);
     store.selectRepo('/test/repo');
 
-    expect(store.selectedRepoPath).toBe('/test/repo');
+    expect(useStore.getState().selectedRepoPath).toBe('/test/repo');
 
     // Add a workspace
     const workspace = {
@@ -277,6 +182,6 @@ describe('Store', () => {
     store.addWorkspace(workspace);
     store.selectWorkspace('workspace-1');
 
-    expect(store.selectedWorkspaceId).toBe('workspace-1');
+    expect(useStore.getState().selectedWorkspaceId).toBe('workspace-1');
   });
 });

@@ -14,7 +14,6 @@ declare global {
 interface PersistedState {
   repos: Record<string, any>;
   workspaces: Record<string, any>;
-  sessions: Record<string, any>;
   selectedRepoPath: string | null;
   selectedWorkspaceId: string | null;
   selectedSessionId: string | null;
@@ -65,7 +64,6 @@ export function setupPersistence(store: StoreApi<any>): void {
     return {
       repos: state.repos || {},
       workspaces: state.workspaces || {},
-      sessions: state.sessions || {},
       selectedRepoPath: state.selectedRepoPath || null,
       selectedWorkspaceId: state.selectedWorkspaceId || null,
       selectedSessionId: state.selectedSessionId || null,
@@ -114,7 +112,6 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
     const {
       repos = {},
       workspaces = {},
-      sessions = {},
       selectedRepoPath = null,
       selectedWorkspaceId = null,
       selectedSessionId = null,
@@ -142,12 +139,12 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
     }
 
     // Check if selected session exists
-    if (validatedSessionId && !sessions[validatedSessionId]) {
-      console.warn(
-        `Selected session ID ${validatedSessionId} not found in loaded sessions, resetting selection`,
-      );
-      validatedSessionId = null;
-    }
+    // if (validatedSessionId && !sessions[validatedSessionId]) {
+    //   console.warn(
+    //     `Selected session ID ${validatedSessionId} not found in loaded sessions, resetting selection`,
+    //   );
+    //   validatedSessionId = null;
+    // }
 
     // Merge persisted state into store
     // Note: We explicitly DON'T set connection state or runtime objects
@@ -155,7 +152,7 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
       {
         repos,
         workspaces,
-        sessions,
+
         selectedRepoPath: validatedRepoPath,
         selectedWorkspaceId: validatedWorkspaceId,
         selectedSessionId: validatedSessionId,

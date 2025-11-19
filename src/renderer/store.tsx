@@ -2,12 +2,7 @@ import { create } from 'zustand';
 import { WebSocketTransport } from './client/transport/WebSocketTransport';
 import { MessageBus } from './client/messaging/MessageBus';
 import { randomUUID } from './utils/uuid';
-import type {
-  RepoData,
-  WorkspaceData,
-  SessionData,
-  Message,
-} from './client/types/entities';
+import type { RepoData, WorkspaceData, Message } from './client/types/entities';
 
 interface StoreState {
   // WebSocket connection state
@@ -19,7 +14,6 @@ interface StoreState {
   // Entity data
   repos: Record<string, RepoData>;
   workspaces: Record<string, WorkspaceData>;
-  sessions: Record<string, SessionData>;
   messages: Message[];
 
   // Processing state
@@ -54,9 +48,7 @@ interface StoreActions {
   deleteWorkspace: (id: string) => void;
 
   // Sessions
-  addSession: (session: SessionData) => void;
-  updateSession: (id: string, updates: Partial<SessionData>) => void;
-  deleteSession: (id: string) => void;
+  // Sessions
   addMessage: (message: Omit<Message, 'id'>) => void;
   setMessages: (messages: Message[]) => void;
 
@@ -76,9 +68,9 @@ const useStore = create<Store>()((set, get) => ({
   initialized: false,
 
   // Initial entity data
+  // Initial entity data
   repos: {},
   workspaces: {},
-  sessions: {},
   messages: [],
 
   // Initial processing state
@@ -206,7 +198,6 @@ const useStore = create<Store>()((set, get) => ({
     const {
       selectedSessionId,
       selectedWorkspaceId,
-      sessions,
       workspaces,
       request,
       selectSession,
@@ -220,37 +211,9 @@ const useStore = create<Store>()((set, get) => ({
 
     if (!sessionId) {
       const newSessionId = randomUUID();
-
-      // const newSession: SessionData = {
-      //   id: newSessionId,
-      //   workspaceId: selectedWorkspaceId,
-      //   messages: [],
-      //   context: {
-      //     files: [],
-      //     codeRefs: [],
-      //   },
-      //   state: {
-      //     pendingOperations: [],
-      //     activeTasks: [],
-      //   },
-      //   metadata: {
-      //     createdAt: Date.now(),
-      //     updatedAt: Date.now(),
-      //     status: 'active',
-      //     tags: [],
-      //     labels: [],
-      //   },
-      // };
-
-      // addSession(newSession);
       selectSession(newSessionId);
       sessionId = newSessionId;
     }
-
-    // const session = sessions[sessionId];
-    // if (!session) {
-    //   throw new Error(`Session ${sessionId} not found`);
-    // }
 
     const workspace = workspaces[selectedWorkspaceId];
     if (!workspace) {
@@ -312,16 +275,9 @@ const useStore = create<Store>()((set, get) => ({
 
       // Delete all workspaces for this repo (cascading)
       const newWorkspaces = { ...state.workspaces };
-      const newSessions = { ...state.sessions };
 
       repo.workspaceIds.forEach((workspaceId) => {
-        const workspace = state.workspaces[workspaceId];
-        if (workspace) {
-          // Delete all sessions for this workspace (cascading)
-          workspace.sessionIds.forEach((sessionId) => {
-            delete newSessions[sessionId];
-          });
-
+        if (state.workspaces[workspaceId]) {
           delete newWorkspaces[workspaceId];
         }
       });
@@ -344,7 +300,6 @@ const useStore = create<Store>()((set, get) => ({
       return {
         repos: newRepos,
         workspaces: newWorkspaces,
-        sessions: newSessions,
         selectedRepoPath,
         selectedWorkspaceId,
         selectedSessionId,
@@ -402,12 +357,6 @@ const useStore = create<Store>()((set, get) => ({
       const workspace = state.workspaces[id];
       if (!workspace) return state;
 
-      // Delete all sessions for this workspace (cascading)
-      const newSessions = { ...state.sessions };
-      workspace.sessionIds.forEach((sessionId) => {
-        delete newSessions[sessionId];
-      });
-
       // Remove the workspace ID from the parent repo
       const repo = state.repos[workspace.repoPath];
       if (repo) {
@@ -435,7 +384,6 @@ const useStore = create<Store>()((set, get) => ({
         return {
           repos: newRepos,
           workspaces: newWorkspaces,
-          sessions: newSessions,
           selectedWorkspaceId,
           selectedSessionId,
         };
@@ -456,7 +404,6 @@ const useStore = create<Store>()((set, get) => ({
 
       return {
         workspaces: newWorkspaces,
-        sessions: newSessions,
         selectedWorkspaceId,
         selectedSessionId,
       };
@@ -464,115 +411,11 @@ const useStore = create<Store>()((set, get) => ({
   },
 
   // Sessions
-  addSession: (session: SessionData) => {
-    set((state) => {
-      // Add the session
-      const newSessions = {
-        ...state.sessions,
-        [session.id]: session,
-      };
-
-      // Add the session ID to the parent workspace
-      const workspace = state.workspaces[session.workspaceId];
-      if (workspace && !workspace.sessionIds.includes(session.id)) {
-        const newWorkspaces = {
-          ...state.workspaces,
-          [session.workspaceId]: {
-            ...workspace,
-            sessionIds: [...workspace.sessionIds, session.id],
-          },
-        };
-
-        return {
-          workspaces: newWorkspaces,
-          sessions: newSessions,
-        };
-      }
-
-      return {
-        sessions: newSessions,
-      };
-    });
-  },
-
-  updateSession: (id: string, updates: Partial<SessionData>) => {
-    set((state) => ({
-      sessions: {
-        ...state.sessions,
-        [id]: {
-          ...state.sessions[id],
-          ...updates,
-        },
-      },
-    }));
-  },
-
-  deleteSession: (id: string) => {
-    set((state) => {
-      // Get the session to delete
-      const session = state.sessions[id];
-      if (!session) return state;
-
-      // Remove the session ID from the parent workspace
-      const workspace = state.workspaces[session.workspaceId];
-      if (workspace) {
-        const newWorkspaces = {
-          ...state.workspaces,
-          [session.workspaceId]: {
-            ...workspace,
-            sessionIds: workspace.sessionIds.filter((sid) => sid !== id),
-          },
-        };
-
-        // Delete the session
-        const newSessions = { ...state.sessions };
-        delete newSessions[id];
-
-        // Clear UI selection if needed
-        let selectedSessionId = state.selectedSessionId;
-        if (selectedSessionId === id) {
-          selectedSessionId = null;
-        }
-
-        return {
-          workspaces: newWorkspaces,
-          sessions: newSessions,
-          selectedSessionId,
-        };
-      }
-
-      // If no workspace found, just delete the session
-      const newSessions = { ...state.sessions };
-      delete newSessions[id];
-
-      // Clear UI selection if needed
-      let selectedSessionId = state.selectedSessionId;
-      if (selectedSessionId === id) {
-        selectedSessionId = null;
-      }
-
-      return {
-        sessions: newSessions,
-        selectedSessionId,
-      };
-    });
-  },
-
+  // Sessions
   addMessage: (message: Message) => {
-    set((state) => {
-      // const session = state.sessions[sessionId];
-      // if (!session) return state;
-
-      // const newMessage: Message = {
-      //   ...message,
-      //   id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      //   timestamp: Date.now(),
-      // };
-
-      return {
-        messages: [...state.messages, message],
-      };
-    });
+    set((state) => ({
+      messages: [...state.messages, message],
+    }));
   },
 
   setMessages: (messages: Message[]) => {
@@ -620,24 +463,9 @@ const useStore = create<Store>()((set, get) => ({
   },
 
   selectSession: (id: string | null) => {
-    set((state) => {
-      // // Validate that the session exists and belongs to the selected workspace if both are set
-      // if (id !== null) {
-      //   const session = state.sessions[id];
-      //   if (!session) return state;
-
-      //   if (
-      //     state.selectedWorkspaceId &&
-      //     session.workspaceId !== state.selectedWorkspaceId
-      //   ) {
-      //     return state;
-      //   }
-      // }
-
-      return {
-        selectedSessionId: id,
-      };
-    });
+    set(() => ({
+      selectedSessionId: id,
+    }));
   },
 }));
 
