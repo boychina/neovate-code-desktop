@@ -7,6 +7,7 @@ const TestComponent = () => {
     selectedRepoPath,
     selectedWorkspaceId,
     selectedSessionId,
+    workspaces,
     selectRepo,
     selectWorkspace,
     selectSession,
@@ -40,6 +41,30 @@ const TestComponent = () => {
           {selectedSessionId || 'none'}
         </div>
       </div>
+      {selectedWorkspaceId && workspaces[selectedWorkspaceId] && (
+        <div
+          style={{
+            marginTop: '8px',
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+            borderTop: '1px solid var(--border-subtle)',
+            paddingTop: '8px',
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+            Current Workspace Info:
+          </div>
+          <div style={{ display: 'grid', gap: '4px' }}>
+            <div>ID: {workspaces[selectedWorkspaceId].id}</div>
+            <div>Branch: {workspaces[selectedWorkspaceId].branch}</div>
+            <div>Path: {workspaces[selectedWorkspaceId].worktreePath}</div>
+            <div>
+              Session IDs:{' '}
+              {workspaces[selectedWorkspaceId].sessionIds?.join(', ') || 'None'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -49,7 +49,6 @@ interface StoreActions {
   deleteWorkspace: (id: string) => void;
 
   // Sessions
-  // Sessions
   addMessage: (message: NormalizedMessage) => void;
   setMessages: (messages: NormalizedMessage[]) => void;
 
