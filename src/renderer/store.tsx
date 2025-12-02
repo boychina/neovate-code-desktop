@@ -207,6 +207,8 @@ const useStore = create<Store>()((set, get) => ({
       workspaces,
       request,
       selectSession,
+      setSessions,
+      sessions,
     } = get();
 
     let sessionId = selectedSessionId;
@@ -217,6 +219,16 @@ const useStore = create<Store>()((set, get) => ({
 
     if (!sessionId) {
       const newSessionId = randomUUID();
+      setSessions(selectedWorkspaceId, [
+        ...(sessions[selectedWorkspaceId] || []),
+        {
+          sessionId: newSessionId,
+          modified: Date.now(),
+          created: Date.now(),
+          messageCount: 0,
+          summary: '',
+        },
+      ]);
       selectSession(newSessionId);
       sessionId = newSessionId;
     }
