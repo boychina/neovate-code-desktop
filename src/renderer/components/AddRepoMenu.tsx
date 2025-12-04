@@ -4,23 +4,10 @@ import { FolderIcon, CloudIcon } from '@hugeicons/core-free-icons';
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from './ui/menu';
 import { useStore } from '../store';
 import { toastManager } from './ui';
-import type { RepoData, WorkspaceData } from '../client/types/entities';
 import type { ElectronAPI } from '../../shared/types';
 
 interface AddRepoMenuProps {
   children: React.ReactElement;
-}
-
-interface GetRepoInfoResponse {
-  success: boolean;
-  data?: { repoData: RepoData };
-  error?: string;
-}
-
-interface GetWorkspacesInfoResponse {
-  success: boolean;
-  data?: { workspaces: WorkspaceData[] };
-  error?: string;
 }
 
 export const AddRepoMenu = ({ children }: AddRepoMenuProps) => {

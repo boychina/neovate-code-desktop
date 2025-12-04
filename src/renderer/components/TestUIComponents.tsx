@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Input,
@@ -97,12 +97,8 @@ import {
   PlusIcon,
   DownloadIcon,
   TrashIcon,
-  EditIcon,
   SettingsIcon,
-  MenuIcon,
   FileIcon,
-  FolderIcon,
-  HomeIcon,
 } from 'lucide-react';
 
 export function TestUIComponents() {
