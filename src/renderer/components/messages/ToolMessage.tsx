@@ -151,7 +151,7 @@ export function ToolMessage({ pair }: ToolMessageProps) {
               style={{
                 color: '#ef4444',
                 fontSize: '13px',
-                padding: '8px',
+                padding: '0 8px 8px',
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
                 borderRadius: '4px',
                 fontFamily: 'monospace',
@@ -215,7 +215,7 @@ export function ToolMessage({ pair }: ToolMessageProps) {
                   whiteSpace: 'pre-wrap',
                   fontFamily: 'monospace',
                   backgroundColor: 'var(--bg-primary)',
-                  padding: '8px',
+                  padding: '0 8px 8px',
                   borderRadius: '4px',
                 }}
               >
