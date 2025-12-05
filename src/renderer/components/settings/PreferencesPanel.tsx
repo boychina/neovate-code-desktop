@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowDownIcon } from '@hugeicons/core-free-icons';
+import { RefreshIcon } from '@hugeicons/core-free-icons';
 import { Button } from '../ui/button';
 import { useStore } from '../../store';
 import { Spinner } from '../ui/spinner';
@@ -82,6 +82,8 @@ const ThemeOption = ({
 };
 
 export const PreferencesPanel = () => {
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+
   const globalConfig = useStore((state) => state.globalConfig);
   const isConfigLoading = useStore((state) => state.isConfigLoading);
   const isConfigSaving = useStore((state) => state.isConfigSaving);
@@ -97,12 +99,16 @@ export const PreferencesPanel = () => {
 
   const handleSendFeedback = () => {
     // Placeholder - will be implemented later
-    console.log('Send feedback clicked');
+    alert('Not implemented yet');
   };
 
-  const handleCheckForUpdates = () => {
-    // Placeholder - will be implemented later
-    console.log('Check for updates clicked');
+  const handleCheckForUpdates = async () => {
+    if (isCheckingForUpdates) return;
+    setIsCheckingForUpdates(true);
+    // Simulate a brief loading state
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    setIsCheckingForUpdates(false);
+    alert('Not implemented yet');
   };
 
   if (isConfigLoading || globalConfig === null) {
@@ -173,8 +179,13 @@ export const PreferencesPanel = () => {
             size="sm"
             onClick={handleCheckForUpdates}
             className="gap-2"
+            disabled={isCheckingForUpdates}
           >
-            <HugeiconsIcon icon={ArrowDownIcon} size={14} strokeWidth={1.5} />
+            {isCheckingForUpdates ? (
+              <Spinner className="h-3.5 w-3.5" />
+            ) : (
+              <HugeiconsIcon icon={RefreshIcon} size={14} strokeWidth={1.5} />
+            )}
             Check for Updates
           </Button>
         </SettingsRow>
