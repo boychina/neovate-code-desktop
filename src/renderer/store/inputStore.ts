@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type InputMode = 'prompt' | 'bash' | 'memory';
 export type PlanMode = 'normal' | 'plan' | 'brainstorm';
+export type ThinkingLevel = null | 'low' | 'medium' | 'high';
 
 interface InputState {
   value: string;
@@ -11,7 +12,7 @@ interface InputState {
   history: string[];
   queuedMessages: string[];
   planMode: PlanMode;
-  thinkingEnabled: boolean;
+  thinking: ThinkingLevel;
   pastedTextMap: Record<string, string>;
   pastedImageMap: Record<string, string>;
 }
@@ -38,7 +39,7 @@ export const useInputStore = create<InputState & InputActions>((set) => ({
   history: [],
   queuedMessages: [],
   planMode: 'normal',
-  thinkingEnabled: false,
+  thinking: null,
   pastedTextMap: {},
   pastedImageMap: {},
 
@@ -59,7 +60,16 @@ export const useInputStore = create<InputState & InputActions>((set) => ({
             : 'normal',
     })),
   toggleThinking: () =>
-    set((state) => ({ thinkingEnabled: !state.thinkingEnabled })),
+    set((state) => ({
+      thinking:
+        state.thinking === null
+          ? 'low'
+          : state.thinking === 'low'
+            ? 'medium'
+            : state.thinking === 'medium'
+              ? 'high'
+              : null,
+    })),
   setPastedTextMap: (pastedTextMap) => set({ pastedTextMap }),
   setPastedImageMap: (pastedImageMap) => set({ pastedImageMap }),
   reset: () =>

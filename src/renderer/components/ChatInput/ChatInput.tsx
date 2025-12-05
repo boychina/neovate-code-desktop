@@ -41,7 +41,7 @@ export function ChatInput({
   disabled = false,
   modelName,
 }: ChatInputProps) {
-  const { planMode, thinkingEnabled, togglePlanMode, toggleThinking } =
+  const { planMode, thinking, togglePlanMode, toggleThinking } =
     useInputStore();
 
   const { inputState, mode, handlers, suggestions, imageManager } =
@@ -245,29 +245,34 @@ export function ChatInput({
               </TooltipPopup>
             </Tooltip>
 
-            {/* Thinking Toggle */}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={() => toggleThinking()}
-                    className="p-1.5 rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{
-                      color: thinkingEnabled
-                        ? 'var(--brand-primary, #3b82f6)'
-                        : 'var(--text-secondary)',
-                    }}
-                  >
-                    <HugeiconsIcon icon={BrainIcon} size={16} />
-                  </button>
-                }
-              />
-              <TooltipPopup>
-                {thinkingEnabled ? 'Disable' : 'Enable'} extended thinking
-                (Ctrl+T)
-              </TooltipPopup>
-            </Tooltip>
+            {/* Thinking Toggle - only show when enabled */}
+            {thinking && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => toggleThinking()}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${thinking === 'high' ? 'thinking-high-twinkle' : ''}`}
+                      style={{
+                        color:
+                          thinking === 'high'
+                            ? '#d4a520'
+                            : 'var(--brand-primary, #3b82f6)',
+                      }}
+                    >
+                      <HugeiconsIcon icon={BrainIcon} size={14} />
+                      <span className="font-medium capitalize">
+                        {thinking === 'medium' ? 'Med' : thinking}
+                      </span>
+                    </button>
+                  }
+                />
+                <TooltipPopup>
+                  Extended thinking: {thinking} (Ctrl+T to cycle)
+                </TooltipPopup>
+              </Tooltip>
+            )}
           </div>
 
           {/* Right side - Send button */}
