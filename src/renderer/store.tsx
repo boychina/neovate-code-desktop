@@ -48,6 +48,10 @@ interface StoreState {
   globalConfig: Record<string, any> | null;
   isConfigLoading: boolean;
   isConfigSaving: boolean;
+
+  // File and command caches
+  filesByWorkspace: Record<WorkspaceId, string[]>;
+  slashCommandsByWorkspace: Record<WorkspaceId, any[]>;
 }
 
 interface StoreActions {
@@ -94,6 +98,10 @@ interface StoreActions {
   loadGlobalConfig: () => Promise<void>;
   getGlobalConfigValue: <T>(key: string, defaultValue?: T) => T | undefined;
   setGlobalConfig: (key: string, value: any) => Promise<boolean>;
+
+  // File and command cache actions
+  fetchFileList: (workspaceId: string) => Promise<string[]>;
+  fetchSlashCommandList: (workspaceId: string) => Promise<any[]>;
 }
 
 type Store = StoreState & StoreActions;
@@ -126,6 +134,10 @@ const useStore = create<Store>()((set, get) => ({
   globalConfig: null,
   isConfigLoading: false,
   isConfigSaving: false,
+
+  // Initial file and command cache state
+  filesByWorkspace: {},
+  slashCommandsByWorkspace: {},
 
   connect: async () => {
     const { transport } = get();
@@ -687,6 +699,65 @@ const useStore = create<Store>()((set, get) => ({
     } finally {
       set({ isConfigSaving: false });
     }
+  },
+
+  fetchFileList: async (workspaceId: string) => {
+    const { filesByWorkspace, workspaces, request } = get();
+
+    // Return cached if exists
+    if (filesByWorkspace[workspaceId]) {
+      return filesByWorkspace[workspaceId];
+    }
+
+    const workspace = workspaces[workspaceId];
+    if (!workspace) return [];
+
+    try {
+      const response = await request('utils.files.list', {
+        cwd: workspace.worktreePath,
+      });
+      if (response.success) {
+        const files = response.data.files;
+        set((state) => ({
+          filesByWorkspace: { ...state.filesByWorkspace, [workspaceId]: files },
+        }));
+        return files;
+      }
+    } catch (error) {
+      console.error('Failed to fetch file list:', error);
+    }
+    return [];
+  },
+
+  fetchSlashCommandList: async (workspaceId: string) => {
+    const { slashCommandsByWorkspace, workspaces, request } = get();
+
+    // Return cached if exists
+    if (slashCommandsByWorkspace[workspaceId]) {
+      return slashCommandsByWorkspace[workspaceId];
+    }
+
+    const workspace = workspaces[workspaceId];
+    if (!workspace) return [];
+
+    try {
+      const response = await request('slashCommand.list', {
+        cwd: workspace.worktreePath,
+      });
+      if (response.success) {
+        const commands = response.data.slashCommands;
+        set((state) => ({
+          slashCommandsByWorkspace: {
+            ...state.slashCommandsByWorkspace,
+            [workspaceId]: commands,
+          },
+        }));
+        return commands;
+      }
+    } catch (error) {
+      console.error('Failed to fetch slash command list:', error);
+    }
+    return [];
   },
 }));
 

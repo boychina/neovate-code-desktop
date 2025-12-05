@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   memo,
+  useCallback,
 } from 'react';
 import type { WorkspaceData, SessionData } from '../client/types/entities';
 import type { NormalizedMessage } from '../client/types/message';
@@ -80,6 +81,10 @@ export const WorkspacePanel = ({
   const workspaces = useStore((state) => state.workspaces);
   const sessionsMap = useStore((state) => state.sessions);
   const messagesMap = useStore((state) => state.messages);
+  const fetchFileList = useStore((state) => state.fetchFileList);
+  const fetchSlashCommandList = useStore(
+    (state) => state.fetchSlashCommandList,
+  );
 
   // Get sessions and messages for the current workspace from store - memoized to avoid infinite loop
   const allSessions = useMemo(
@@ -192,6 +197,17 @@ export const WorkspacePanel = ({
     setInputValue('');
   };
 
+  // Create wrapper functions that provide context for ChatInput
+  const fetchPaths = useCallback(async () => {
+    if (!selectedWorkspaceId) return [];
+    return fetchFileList(selectedWorkspaceId);
+  }, [selectedWorkspaceId, fetchFileList]);
+
+  const fetchCommands = useCallback(async () => {
+    if (!selectedWorkspaceId) return [];
+    return fetchSlashCommandList(selectedWorkspaceId);
+  }, [selectedWorkspaceId, fetchSlashCommandList]);
+
   if (!workspace) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -246,6 +262,8 @@ export const WorkspacePanel = ({
           <ChatInput
             onSubmit={sendMessage}
             onCancel={() => setInputValue('')}
+            fetchPaths={fetchPaths}
+            fetchCommands={fetchCommands}
             placeholder={
               selectedSessionId
                 ? 'Ask anything, @ for context'

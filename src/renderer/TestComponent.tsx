@@ -36,6 +36,9 @@ const TestComponent = () => {
     selectRepo,
     selectWorkspace,
     selectSession,
+    filesByWorkspace,
+    slashCommandsByWorkspace,
+    globalConfig,
   } = useStore();
 
   const handleClearSelections = () => {
@@ -92,8 +95,130 @@ const TestComponent = () => {
                 .join(', ') || 'None'}
             </div>
           </div>
+
+          {/* Slash Commands */}
+          <div style={{ marginTop: '12px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+              Slash Commands (
+              {slashCommandsByWorkspace[selectedWorkspaceId]?.length || 0}):
+            </div>
+            <div
+              style={{
+                maxHeight: '150px',
+                overflow: 'auto',
+                backgroundColor: 'var(--bg-tertiary)',
+                padding: '8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+              }}
+            >
+              {slashCommandsByWorkspace[selectedWorkspaceId]?.length > 0 ? (
+                <div style={{ display: 'grid', gap: '4px' }}>
+                  {slashCommandsByWorkspace[selectedWorkspaceId].map(
+                    (cmd, index) => (
+                      <div key={cmd.command.name}>
+                        {/* <span>{JSON.stringify(cmd)}</span> */}
+                        <span style={{ fontWeight: 600 }}>
+                          /{cmd.command.name}
+                        </span>
+                        {cmd.command.description && (
+                          <span style={{ color: 'var(--text-tertiary)' }}>
+                            {' '}
+                            - {cmd.command.description}
+                          </span>
+                        )}
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-tertiary)' }}>
+                  No slash commands cached
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Files */}
+          <div style={{ marginTop: '12px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+              Files ({filesByWorkspace[selectedWorkspaceId]?.length || 0}):
+            </div>
+            <div
+              style={{
+                maxHeight: '150px',
+                overflow: 'auto',
+                backgroundColor: 'var(--bg-tertiary)',
+                padding: '8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+              }}
+            >
+              {filesByWorkspace[selectedWorkspaceId]?.length > 0 ? (
+                <div style={{ display: 'grid', gap: '2px' }}>
+                  {filesByWorkspace[selectedWorkspaceId].map((file, index) => (
+                    <div key={`${index}-${file}`}>{JSON.stringify(file)}</div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  No files cached
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
+
+      {/* Global Config */}
+      <div
+        style={{
+          marginTop: '8px',
+          fontSize: '12px',
+          color: 'var(--text-secondary)',
+          borderTop: '1px solid var(--border-subtle)',
+          paddingTop: '8px',
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+          Global Config:
+        </div>
+        <div
+          style={{
+            maxHeight: '200px',
+            overflow: 'auto',
+            backgroundColor: 'var(--bg-tertiary)',
+            padding: '8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+          }}
+        >
+          {globalConfig ? (
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {JSON.stringify(globalConfig, null, 2)}
+            </pre>
+          ) : (
+            <div
+              style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}
+            >
+              No config loaded
+            </div>
+          )}
+        </div>
+      </div>
       <div style={{ marginTop: '16px' }}>
         <TestHugeIcons />
       </div>
