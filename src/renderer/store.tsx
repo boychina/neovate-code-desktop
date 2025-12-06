@@ -197,7 +197,7 @@ const useStore = create<Store>()((set, get) => ({
     });
   },
 
-  request: <K extends HandlerMethod>(
+  request: async <K extends HandlerMethod>(
     method: K,
     params: HandlerInput<K>,
   ): Promise<HandlerOutput<K>> => {
@@ -209,10 +209,13 @@ const useStore = create<Store>()((set, get) => ({
       );
     }
 
-    return messageBus.request<HandlerInput<K>, HandlerOutput<K>>(
-      method,
-      params,
-    );
+    console.log('[REQUEST]', method, params);
+    const response = await messageBus.request<
+      HandlerInput<K>,
+      HandlerOutput<K>
+    >(method, params);
+    console.log('[RESPONSE]', method, response);
+    return response;
   },
 
   onEvent: <T,>(event: string, handler: (data: T) => void) => {
