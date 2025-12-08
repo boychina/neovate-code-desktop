@@ -55,6 +55,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "concurrently": "^9.2.1",
+    "date-fns": "^4.1.0",
     "diff": "^8.0.2",
     "electron": "^39.2.1",
     "electron-builder": "^26.0.12",

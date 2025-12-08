@@ -11,9 +11,18 @@ import {
   ClockIcon,
   DatabaseIcon,
   CloudIcon,
+  Comment01Icon,
 } from '@hugeicons/core-free-icons';
+import { formatDistanceToNowStrict } from 'date-fns';
 import type { RepoData } from '../client/types/entities';
 import { useStore } from '../store';
+
+// Helper function to format relative time using date-fns
+function formatRelativeTime(timestamp: number): string {
+  return formatDistanceToNowStrict(timestamp, { addSuffix: false });
+}
+
+const DEFAULT_SESSION_LIMIT = 5;
 import {
   Accordion,
   AccordionItem,
@@ -64,11 +73,17 @@ export const RepoSidebar = ({
 }) => {
   const allRepoIds = repos.map((repo) => repo.path);
   const [openRepos, setOpenRepos] = useState<string[]>(allRepoIds);
+  const [expandedSessions, setExpandedSessions] = useState<
+    Record<string, boolean>
+  >({});
   const workspaces = useStore((state) => state.workspaces);
+  const sessions = useStore((state) => state.sessions);
+  const selectedSessionId = useStore((state) => state.selectedSessionId);
   const deleteRepo = useStore((state) => state.deleteRepo);
   const request = useStore((state) => state.request);
   const addWorkspace = useStore((state) => state.addWorkspace);
   const selectWorkspace = useStore((state) => state.selectWorkspace);
+  const selectSession = useStore((state) => state.selectSession);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -256,54 +271,155 @@ export const RepoSidebar = ({
                       const workspace = workspaces[workspaceId];
                       if (!workspace) return null;
 
-                      const isSelected = selectedWorkspaceId === workspaceId;
+                      const isWorkspaceSelected =
+                        selectedWorkspaceId === workspaceId;
                       const changesCount =
                         workspace.gitState.pendingChanges.length;
 
+                      // Get sessions for this workspace, sorted by modified (newest first)
+                      const workspaceSessions = (sessions[workspaceId] || [])
+                        .slice()
+                        .sort((a, b) => b.modified - a.modified);
+                      const expandKey = `${repo.path}-${workspaceId}`;
+                      const isExpanded = expandedSessions[expandKey] ?? false;
+                      const visibleSessions = isExpanded
+                        ? workspaceSessions
+                        : workspaceSessions.slice(0, DEFAULT_SESSION_LIMIT);
+                      const hiddenCount =
+                        workspaceSessions.length - DEFAULT_SESSION_LIMIT;
+
                       return (
-                        <div
-                          key={workspaceId}
-                          className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors"
-                          style={{
-                            backgroundColor: isSelected
-                              ? 'var(--bg-base)'
-                              : 'transparent',
-                            color: isSelected
-                              ? 'var(--text-primary)'
-                              : 'var(--text-secondary)',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isSelected) {
-                              e.currentTarget.style.backgroundColor =
-                                'var(--bg-base-hover)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isSelected) {
-                              e.currentTarget.style.backgroundColor =
-                                'transparent';
-                            }
-                          }}
-                          onClick={() => onSelectWorkspace(workspaceId)}
-                        >
-                          <HugeiconsIcon
-                            icon={GitBranchIcon}
-                            size={16}
-                            strokeWidth={1.5}
-                          />
-                          <span className="flex-1 text-sm">
-                            {workspace.branch}
-                          </span>
-                          {changesCount > 0 && (
-                            <span
-                              className="text-xs px-1.5 py-0.5 rounded"
-                              style={{
-                                backgroundColor: '#fef3c7',
-                                color: '#92400e',
-                              }}
-                            >
-                              {changesCount}
+                        <div key={workspaceId}>
+                          <div
+                            className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors"
+                            style={{
+                              backgroundColor: isWorkspaceSelected
+                                ? 'var(--bg-base)'
+                                : 'transparent',
+                              color: isWorkspaceSelected
+                                ? 'var(--text-primary)'
+                                : 'var(--text-secondary)',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isWorkspaceSelected) {
+                                e.currentTarget.style.backgroundColor =
+                                  'var(--bg-base-hover)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isWorkspaceSelected) {
+                                e.currentTarget.style.backgroundColor =
+                                  'transparent';
+                              }
+                            }}
+                            onClick={() => onSelectWorkspace(workspaceId)}
+                          >
+                            <HugeiconsIcon
+                              icon={GitBranchIcon}
+                              size={16}
+                              strokeWidth={1.5}
+                            />
+                            <span className="flex-1 text-sm">
+                              {workspace.branch}
                             </span>
+                            {changesCount > 0 && (
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded"
+                                style={{
+                                  backgroundColor: '#fef3c7',
+                                  color: '#92400e',
+                                }}
+                              >
+                                {changesCount}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Session list */}
+                          {workspaceSessions.length > 0 && (
+                            <div className="ml-4">
+                              {visibleSessions.map((session) => {
+                                const isSessionSelected =
+                                  selectedSessionId === session.sessionId;
+                                const displaySummary =
+                                  session.summary && session.summary.length > 20
+                                    ? `${session.summary.slice(0, 20)}…`
+                                    : session.summary || 'New session';
+
+                                return (
+                                  <div
+                                    key={session.sessionId}
+                                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors"
+                                    style={{
+                                      backgroundColor: isSessionSelected
+                                        ? 'var(--bg-base)'
+                                        : 'transparent',
+                                      color: isSessionSelected
+                                        ? 'var(--text-primary)'
+                                        : 'var(--text-tertiary)',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isSessionSelected) {
+                                        e.currentTarget.style.backgroundColor =
+                                          'var(--bg-base-hover)';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isSessionSelected) {
+                                        e.currentTarget.style.backgroundColor =
+                                          'transparent';
+                                      }
+                                    }}
+                                    onClick={() => {
+                                      selectWorkspace(workspaceId);
+                                      selectSession(session.sessionId);
+                                    }}
+                                  >
+                                    <HugeiconsIcon
+                                      icon={Comment01Icon}
+                                      size={14}
+                                      strokeWidth={1.5}
+                                    />
+                                    <span className="flex-1 text-xs truncate">
+                                      {displaySummary}
+                                    </span>
+                                    <span
+                                      className="text-xs"
+                                      style={{ color: 'var(--text-tertiary)' }}
+                                    >
+                                      {formatRelativeTime(session.modified)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+
+                              {/* Show more/less toggle */}
+                              {hiddenCount > 0 && (
+                                <button
+                                  className="px-3 py-1 text-xs cursor-pointer transition-colors"
+                                  style={{ color: 'var(--text-tertiary)' }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.color =
+                                      'var(--text-secondary)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.color =
+                                      'var(--text-tertiary)';
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedSessions((prev) => ({
+                                      ...prev,
+                                      [expandKey]: !prev[expandKey],
+                                    }));
+                                  }}
+                                >
+                                  {isExpanded
+                                    ? 'Show less'
+                                    : `Show ${hiddenCount} more`}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
