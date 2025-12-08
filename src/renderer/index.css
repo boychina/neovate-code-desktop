@@ -45,7 +45,7 @@
 }
 
 /* Dark theme utilities no longer needed - components will gradually migrate to CSS variables */
-/* @import "./components/components.css"; */
+@import "./components/components.css";
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);

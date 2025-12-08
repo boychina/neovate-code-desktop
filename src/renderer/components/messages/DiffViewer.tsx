@@ -100,7 +100,7 @@ export function DiffViewer({
               color,
               backgroundColor,
               padding: '2px 4px',
-              whiteSpace: 'pre',
+              // whiteSpace: 'pre',
             }}
           >
             {line.content}

@@ -325,7 +325,13 @@ WorkspacePanel.Header = function Header() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="default" size="sm">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => {
+              alert('Not implemented');
+            }}
+          >
             Open in Editor
           </Button>
           <DropdownMenu>

@@ -22,6 +22,7 @@ export function UserMessage({ message }: UserMessageProps) {
           color: 'var(--foreground)',
           borderRadius: '8px',
           padding: '12px 8px',
+          marginBottom: '12px',
         }}
       >
         {/* Text content */}

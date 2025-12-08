@@ -45,12 +45,14 @@ export function AssistantMessage({
   return (
     <div className="flex justify-start">
       <div
-        style={{
-          // maxWidth: '80%',
-          // backgroundColor: 'var(--bg-surface)',
-          // borderRadius: '12px',
-          padding: '12px 0',
-        }}
+        style={
+          {
+            // maxWidth: '80%',
+            // backgroundColor: 'var(--bg-surface)',
+            // borderRadius: '12px',
+            // padding: '12px 0',
+          }
+        }
       >
         {/* Reasoning (thinking) parts */}
         {reasoningParts.length > 0 && (
