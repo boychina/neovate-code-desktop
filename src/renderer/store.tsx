@@ -716,11 +716,11 @@ const useStore = create<Store>()((set, get) => ({
     if (!workspace) return [];
 
     try {
-      const response = await request('utils.files.list', {
+      const response = await request('utils.getPaths', {
         cwd: workspace.worktreePath,
       });
       if (response.success) {
-        const files = response.data.files.map((file: any) => file.path).sort();
+        const files = response.data.paths;
         set((state) => ({
           filesByWorkspace: { ...state.filesByWorkspace, [workspaceId]: files },
         }));
