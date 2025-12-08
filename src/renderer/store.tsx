@@ -420,7 +420,7 @@ const useStore = create<Store>()((set, get) => ({
           ...state.repos,
           [workspace.repoPath]: {
             ...repo,
-            workspaceIds: [...repo.workspaceIds, workspace.id],
+            workspaceIds: [workspace.id, ...repo.workspaceIds],
           },
         };
 
