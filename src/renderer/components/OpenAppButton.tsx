@@ -1,0 +1,108 @@
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/menu';
+import { ChevronDown, Loader2 } from 'lucide-react';
+import type { App, HandlerMap, HandlerOutput } from '../nodeBridge.types';
+
+/**
+ * User-friendly display names for apps
+ */
+const APP_NAMES: Record<App, string> = {
+  cursor: 'Cursor',
+  vscode: 'VS Code',
+  'vscode-insiders': 'VS Code Insiders',
+  zed: 'Zed',
+  windsurf: 'Windsurf',
+  iterm: 'iTerm',
+  warp: 'Warp',
+  terminal: 'Terminal',
+  antigravity: 'Antigravity',
+  finder: 'Finder',
+  sourcetree: 'Sourcetree',
+};
+
+interface OpenAppButtonProps {
+  cwd: string;
+  request: <K extends keyof HandlerMap>(
+    method: K,
+    params: HandlerMap[K]['input'],
+  ) => Promise<HandlerOutput<K>>;
+}
+
+/**
+ * Button with dropdown menu to open the current workspace in an available app.
+ * Detects available apps on click and displays user-friendly names.
+ */
+export function OpenAppButton({ cwd, request }: OpenAppButtonProps) {
+  const [apps, setApps] = useState<App[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleOpenChange = async (open: boolean) => {
+    if (open) {
+      setIsLoading(true);
+      try {
+        const response = await request('utils.detectApps', { cwd });
+        if (response.success) {
+          setApps(response.data.apps);
+        }
+      } catch (error) {
+        console.error('Failed to detect apps:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleOpenApp = async (app: App) => {
+    try {
+      await request('utils.open', { cwd, app });
+    } catch (error) {
+      console.error('Failed to open app:', error);
+    }
+  };
+
+  return (
+    <DropdownMenu onOpenChange={handleOpenChange}>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm">
+            Open <ChevronDown className="ml-2 h-4 w-4" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-2 px-4">
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            <span
+              className="text-sm"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Detecting apps...
+            </span>
+          </div>
+        ) : apps.length === 0 ? (
+          <div className="py-2 px-4">
+            <span
+              className="text-sm"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              No apps detected
+            </span>
+          </div>
+        ) : (
+          apps.map((app) => (
+            <DropdownMenuItem key={app} onClick={() => handleOpenApp(app)}>
+              {APP_NAMES[app]}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

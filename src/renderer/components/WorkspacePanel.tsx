@@ -29,6 +29,7 @@ import { useStore } from '../store';
 import { ChatInput } from './ChatInput';
 import { Message } from './messages/Message';
 import { splitMessages } from './messages/messageHelpers';
+import { OpenAppButton } from './OpenAppButton';
 
 // Define the context type
 interface WorkspaceContextType {
@@ -328,15 +329,7 @@ WorkspacePanel.Header = function Header() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              alert('Not implemented');
-            }}
-          >
-            Open in Editor
-          </Button>
+          <OpenAppButton cwd={workspace.worktreePath} request={request} />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
