@@ -20,6 +20,27 @@ type WorkspaceId = string;
 type SessionId = string;
 type RepoId = string;
 
+// Session-scoped processing state
+interface SessionProcessingState {
+  status: 'idle' | 'processing' | 'failed';
+  processingStartTime: number | null;
+  processingToken: number;
+  error: string | null;
+  retryInfo: {
+    currentRetry: number;
+    maxRetries: number;
+    error: string | null;
+  } | null;
+}
+
+const defaultSessionProcessingState: SessionProcessingState = {
+  status: 'idle',
+  processingStartTime: null,
+  processingToken: 0,
+  error: null,
+  retryInfo: null,
+};
+
 interface StoreState {
   // WebSocket connection state
   state: 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -33,10 +54,8 @@ interface StoreState {
   sessions: Record<WorkspaceId, SessionData[]>;
   messages: Record<SessionId, NormalizedMessage[]>;
 
-  // Processing state
-  status: 'idle' | 'processing';
-  processingStartTime: number;
-  processingToken: number;
+  // Session-scoped processing state
+  sessionProcessing: Record<SessionId, SessionProcessingState>;
 
   // UI state
   selectedRepoPath: string | null;
@@ -68,6 +87,13 @@ interface StoreActions {
   onEvent: <T>(event: string, handler: (data: T) => void) => void;
   initialize: () => Promise<void>;
   sendMessage: (params: { message: string }) => Promise<void>;
+
+  // Session processing state helpers
+  getSessionProcessing: (sessionId: string) => SessionProcessingState;
+  setSessionProcessing: (
+    sessionId: string,
+    state: Partial<SessionProcessingState>,
+  ) => void;
 
   // Entity CRUD operations
   // Repos
@@ -125,10 +151,8 @@ const useStore = create<Store>()((set, get) => ({
   sessions: {},
   messages: {},
 
-  // Initial processing state
-  status: 'idle',
-  processingStartTime: 0,
-  processingToken: 0,
+  // Initial session processing state
+  sessionProcessing: {},
 
   // Initial UI state
   selectedRepoPath: null,
@@ -259,13 +283,49 @@ const useStore = create<Store>()((set, get) => ({
 
     onEvent('chunk', (data: any) => {
       console.log('chunk', data);
+      // Increment token count for the session
+      if (data.sessionId) {
+        const { setSessionProcessing, getSessionProcessing } = get();
+        const current = getSessionProcessing(data.sessionId);
+        setSessionProcessing(data.sessionId, {
+          processingToken: current.processingToken + 1,
+        });
+      }
     });
 
     onEvent('streamResult', (data: any) => {
       console.log('streamResult', data);
+      // Update retry info if present
+      if (data.sessionId && data.retryInfo) {
+        const { setSessionProcessing } = get();
+        setSessionProcessing(data.sessionId, {
+          retryInfo: data.retryInfo,
+        });
+      }
     });
 
     set({ initialized: true });
+  },
+
+  getSessionProcessing: (sessionId: string): SessionProcessingState => {
+    const { sessionProcessing } = get();
+    return sessionProcessing[sessionId] || defaultSessionProcessingState;
+  },
+
+  setSessionProcessing: (
+    sessionId: string,
+    state: Partial<SessionProcessingState>,
+  ) => {
+    set((prev) => ({
+      sessionProcessing: {
+        ...prev.sessionProcessing,
+        [sessionId]: {
+          ...(prev.sessionProcessing[sessionId] ||
+            defaultSessionProcessingState),
+          ...state,
+        },
+      },
+    }));
   },
 
   sendMessage: async (params: { message: string }) => {
@@ -277,7 +337,7 @@ const useStore = create<Store>()((set, get) => ({
       createSession,
       sessions,
       updateSession,
-      messages,
+      setSessionProcessing,
     } = get();
 
     let sessionId = selectedSessionId;
@@ -297,10 +357,13 @@ const useStore = create<Store>()((set, get) => ({
 
     const cwd = workspace.worktreePath;
 
-    set({
+    // Set session-scoped processing state
+    setSessionProcessing(sessionId, {
       status: 'processing',
       processingStartTime: Date.now(),
       processingToken: 0,
+      error: null,
+      retryInfo: null,
     });
 
     try {
@@ -316,6 +379,14 @@ const useStore = create<Store>()((set, get) => ({
       const sessionMessages = get().messages[sessionId] || [];
       const userMessages = sessionMessages.filter((m) => m.role === 'user');
       if (userMessages.length > 1) {
+        // Reset processing state on completion
+        setSessionProcessing(sessionId, {
+          status: 'idle',
+          processingStartTime: null,
+          processingToken: 0,
+          error: null,
+          retryInfo: null,
+        });
         return;
       }
       const userMessagesText = userMessages
@@ -341,11 +412,20 @@ const useStore = create<Store>()((set, get) => ({
           }
         } catch (_error) {}
       }
-    } finally {
-      set({
+
+      // Reset processing state on success
+      setSessionProcessing(sessionId, {
         status: 'idle',
-        processingStartTime: 0,
+        processingStartTime: null,
         processingToken: 0,
+        error: null,
+        retryInfo: null,
+      });
+    } catch (error) {
+      // Set failed state with error message
+      setSessionProcessing(sessionId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'An error occurred',
       });
     }
   },
@@ -800,4 +880,5 @@ const useStore = create<Store>()((set, get) => ({
   },
 }));
 
-export { useStore, Store, StoreState, StoreActions };
+export { useStore };
+export type { Store, StoreState, StoreActions, SessionProcessingState };

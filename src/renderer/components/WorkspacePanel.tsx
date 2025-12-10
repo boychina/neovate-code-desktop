@@ -30,6 +30,7 @@ import { ChatInput } from './ChatInput';
 import { Message } from './messages/Message';
 import { splitMessages } from './messages/messageHelpers';
 import { OpenAppButton } from './OpenAppButton';
+import { ActivityIndicator } from './ActivityIndicator';
 
 // Define the context type
 interface WorkspaceContextType {
@@ -257,9 +258,10 @@ export const WorkspacePanel = ({
         {/* <WorkspacePanel.WorkspaceInfo /> */}
         <WorkspacePanel.Messages />
         <div
-          className="p-4"
+          className="p-4 flex flex-col gap-3"
           style={{ borderTop: '1px solid var(--border-subtle)' }}
         >
+          <ActivityIndicator sessionId={selectedSessionId} />
           <ChatInput
             onSubmit={sendMessage}
             onCancel={() => setInputValue('')}
