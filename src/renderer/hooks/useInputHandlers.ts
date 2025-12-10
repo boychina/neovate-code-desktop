@@ -6,6 +6,7 @@ import { useSlashCommands, type SlashCommand } from './useSlashCommands';
 import { usePasteManager } from './usePasteManager';
 import { useImagePasteManager } from './useImagePasteManager';
 import { useDoublePress } from './useDoublePress';
+import { toastManager } from '../components/ui/toast';
 
 const LARGE_PASTE_THRESHOLD = 800;
 
@@ -15,6 +16,7 @@ interface UseInputHandlersProps {
   onShowForkModal: () => void;
   fetchPaths: () => Promise<string[]>;
   fetchCommands: () => Promise<SlashCommand[]>;
+  isProcessing?: boolean;
 }
 
 export function useInputHandlers({
@@ -23,6 +25,7 @@ export function useInputHandlers({
   onShowForkModal,
   fetchPaths,
   fetchCommands,
+  isProcessing,
 }: UseInputHandlersProps) {
   const inputState = useInputState();
   const { value, cursorPosition, mode } = inputState.state;
@@ -84,6 +87,16 @@ export function useInputHandlers({
   }, [fileSuggestion, inputState, value]);
 
   const handleSubmit = useCallback(() => {
+    // Block submission during processing
+    if (isProcessing) {
+      toastManager.add({
+        type: 'warning',
+        title: 'Please wait',
+        description: 'Processing previous message...',
+      });
+      return;
+    }
+
     // When suggestions are visible, Enter only applies the suggestion without submitting
     if (slashCommands.suggestions.length > 0) {
       const completed = slashCommands.getCompletedCommand();
@@ -124,6 +137,7 @@ export function useInputHandlers({
     pasteManager,
     imageManager,
     planMode,
+    isProcessing,
   ]);
 
   const handleHistoryUp = useCallback(() => {

@@ -47,6 +47,7 @@ interface ChatInputProps {
   fetchCommands?: () => Promise<SlashCommand[]>;
   placeholder?: string;
   disabled?: boolean;
+  isProcessing?: boolean;
   modelName?: string;
   sessionId?: string;
   cwd?: string;
@@ -69,6 +70,7 @@ export function ChatInput({
   fetchCommands = defaultFetchCommands,
   placeholder = 'Type your message...',
   disabled = false,
+  isProcessing = false,
   modelName,
   sessionId,
   cwd,
@@ -250,6 +252,7 @@ export function ChatInput({
       onShowForkModal,
       fetchPaths,
       fetchCommands,
+      isProcessing,
     });
 
   const { value } = inputState.state;
@@ -292,7 +295,8 @@ export function ChatInput({
 
   const handleSendClick = () => {
     // Prevent submission when suggestions are visible
-    if (canSend && !disabled && !isSuggestionVisible) {
+    // Allow clicks during processing (toast warning will be shown by handler)
+    if (canSend && (!disabled || isProcessing) && !isSuggestionVisible) {
       const submitEvent = {
         key: 'Enter',
         preventDefault: () => {},
@@ -385,7 +389,7 @@ export function ChatInput({
           onKeyDown={handlers.onKeyDown}
           onPaste={handlers.onPaste}
           placeholder={placeholder}
-          disabled={disabled}
+          disabled={disabled && !isProcessing}
           className="border-0 rounded-none resize-none focus:ring-0 focus-visible:ring-0"
           style={{
             minHeight: '80px',
@@ -553,7 +557,7 @@ export function ChatInput({
                   size="icon-sm"
                   variant={canSend ? 'default' : 'ghost'}
                   onClick={handleSendClick}
-                  disabled={!canSend || disabled}
+                  disabled={!canSend || (disabled && !isProcessing)}
                 >
                   <HugeiconsIcon icon={SentIcon} size={18} />
                 </Button>

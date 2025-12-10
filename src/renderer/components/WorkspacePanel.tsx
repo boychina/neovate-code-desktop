@@ -273,7 +273,7 @@ export const WorkspacePanel = ({
                 : 'Ask anything, @ for context with a new session...'
             }
             modelName={workspace.context.settings?.model}
-            disabled={isLoading}
+            isProcessing={isLoading}
             sessionId={selectedSessionId || undefined}
             cwd={workspace.repoPath}
             request={request}
