@@ -500,7 +500,7 @@ WorkspacePanel.Messages = function Messages() {
 
     const { scrollTop, scrollHeight, clientHeight } = container;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    const isNearBottom = distanceFromBottom < 100; // 100px threshold
+    const isNearBottom = distanceFromBottom < 300; // 300px threshold
     const isFirstLoad =
       prevMessagesLengthRef.current === 0 && messages.length > 0;
     const isSessionSwitch = prevSessionIdRef.current !== selectedSessionId;
