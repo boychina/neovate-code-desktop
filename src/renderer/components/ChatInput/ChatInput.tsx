@@ -480,11 +480,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     ) : providers.length === 0 ? (
                       <option value={currentProvider}>{currentProvider}</option>
                     ) : (
-                      providers.map((provider) => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.id}
-                        </option>
-                      ))
+                      [...providers]
+                        .sort((a, b) => a.id.localeCompare(b.id))
+                        .map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.id}
+                          </option>
+                        ))
                     )}
                   </select>
 
@@ -515,11 +517,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                     ) : models.length === 0 ? (
                       <option value={currentModel}>{currentModel}</option>
                     ) : (
-                      models.map((model) => (
-                        <option key={model.modelId} value={model.modelId}>
-                          {model.modelId}
-                        </option>
-                      ))
+                      [...models]
+                        .sort((a, b) => a.modelId.localeCompare(b.modelId))
+                        .map((model) => (
+                          <option key={model.modelId} value={model.modelId}>
+                            {model.modelId}
+                          </option>
+                        ))
                     )}
                   </select>
                 </div>
