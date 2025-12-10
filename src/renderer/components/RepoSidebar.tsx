@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   FolderIcon,
@@ -71,11 +71,14 @@ export const RepoSidebar = ({
   onSelectRepo: (path: string | null) => void;
   onSelectWorkspace: (id: string | null) => void;
 }) => {
-  const allRepoIds = repos.map((repo) => repo.path);
-  const [openRepos, setOpenRepos] = useState<string[]>(allRepoIds);
-  const [expandedSessions, setExpandedSessions] = useState<
-    Record<string, boolean>
-  >({});
+  const openRepos = useStore((state) => state.openRepoAccordions);
+  const setOpenRepoAccordions = useStore(
+    (state) => state.setOpenRepoAccordions,
+  );
+  const expandedSessions = useStore((state) => state.expandedSessionGroups);
+  const toggleSessionGroupExpanded = useStore(
+    (state) => state.toggleSessionGroupExpanded,
+  );
   const workspaces = useStore((state) => state.workspaces);
   const sessions = useStore((state) => state.sessions);
   const selectedSessionId = useStore((state) => state.selectedSessionId);
@@ -93,7 +96,7 @@ export const RepoSidebar = ({
   const [selectedRepoForDialog, setSelectedRepoForDialog] =
     useState<RepoData | null>(null);
 
-  const handleRepoInfoClick = (repo: RepoData, e: React.MouseEvent) => {
+  const handleRepoInfoClick = (repo: RepoData, e: MouseEvent) => {
     e.stopPropagation();
     setAlertDialogOpen(false); // Ensure alert is closed
     setSelectedRepoForDialog(repo);
@@ -113,19 +116,9 @@ export const RepoSidebar = ({
     }
   };
 
-  React.useEffect(() => {
-    setOpenRepos((prev) => {
-      const newRepoIds = allRepoIds.filter((id) => !prev.includes(id));
-      if (newRepoIds.length > 0) {
-        return [...prev, ...newRepoIds];
-      }
-      return prev;
-    });
-  }, [allRepoIds.join(',')]);
-
   const handleNewWorkspace = async (repoPath: string) => {
     if (!openRepos.includes(repoPath)) {
-      setOpenRepos((prev) => [...prev, repoPath]);
+      setOpenRepoAccordions([...openRepos, repoPath]);
     }
 
     try {
@@ -215,7 +208,7 @@ export const RepoSidebar = ({
               </EmptyHeader>
             </Empty>
           ) : (
-            <Accordion value={openRepos} onValueChange={setOpenRepos}>
+            <Accordion value={openRepos} onValueChange={setOpenRepoAccordions}>
               {repos.map((repo) => (
                 <AccordionItem key={repo.path} value={repo.path}>
                   <AccordionTrigger className="px-3 py-2 hover:bg-opacity-50">
@@ -451,10 +444,7 @@ export const RepoSidebar = ({
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setExpandedSessions((prev) => ({
-                                      ...prev,
-                                      [expandKey]: !prev[expandKey],
-                                    }));
+                                    toggleSessionGroupExpanded(expandKey);
                                   }}
                                 >
                                   {isExpanded

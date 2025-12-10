@@ -44,6 +44,8 @@ interface StoreState {
   selectedSessionId: SessionId | null;
   showSettings: boolean;
   sidebarCollapsed: boolean;
+  openRepoAccordions: string[];
+  expandedSessionGroups: Record<string, boolean>;
 
   // Config state
   globalConfig: Record<string, any> | null;
@@ -95,6 +97,8 @@ interface StoreActions {
   selectSession: (id: string | null) => void;
   setShowSettings: (show: boolean) => void;
   toggleSidebar: () => void;
+  setOpenRepoAccordions: (ids: string[]) => void;
+  toggleSessionGroupExpanded: (workspaceId: string) => void;
 
   // Config actions
   loadGlobalConfig: () => Promise<void>;
@@ -132,6 +136,8 @@ const useStore = create<Store>()((set, get) => ({
   selectedSessionId: null,
   showSettings: false,
   sidebarCollapsed: false,
+  openRepoAccordions: [],
+  expandedSessionGroups: {},
 
   // Initial config state
   globalConfig: null,
@@ -352,6 +358,9 @@ const useStore = create<Store>()((set, get) => ({
         ...state.repos,
         [repo.path]: repo,
       },
+      openRepoAccordions: state.openRepoAccordions.includes(repo.path)
+        ? state.openRepoAccordions
+        : [...state.openRepoAccordions, repo.path],
     }));
   },
 
@@ -630,6 +639,21 @@ const useStore = create<Store>()((set, get) => ({
   toggleSidebar: () => {
     set((state) => ({
       sidebarCollapsed: !state.sidebarCollapsed,
+    }));
+  },
+
+  setOpenRepoAccordions: (ids: string[]) => {
+    set(() => ({
+      openRepoAccordions: ids,
+    }));
+  },
+
+  toggleSessionGroupExpanded: (workspaceId: string) => {
+    set((state) => ({
+      expandedSessionGroups: {
+        ...state.expandedSessionGroups,
+        [workspaceId]: !state.expandedSessionGroups[workspaceId],
+      },
     }));
   },
 

@@ -20,6 +20,8 @@ interface PersistedState {
   selectedSessionId: string | null;
   sessions: Record<string, any>;
   sidebarCollapsed: boolean;
+  openRepoAccordions: string[];
+  expandedSessionGroups: Record<string, boolean>;
 }
 
 // Debounce helper
@@ -72,6 +74,8 @@ export function setupPersistence(store: StoreApi<any>): void {
       selectedSessionId: state.selectedSessionId || null,
       sessions: state.sessions || {},
       sidebarCollapsed: state.sidebarCollapsed || false,
+      openRepoAccordions: state.openRepoAccordions || [],
+      expandedSessionGroups: state.expandedSessionGroups || {},
     };
   };
 
@@ -124,6 +128,8 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
       selectedSessionId = null,
       sessions = {},
       sidebarCollapsed = false,
+      openRepoAccordions = [],
+      expandedSessionGroups = {},
     } = persistedState;
 
     // Validate selections exist in loaded entities
@@ -163,6 +169,8 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
         workspaces,
         sessions,
         sidebarCollapsed,
+        openRepoAccordions,
+        expandedSessionGroups,
 
         selectedRepoPath: validatedRepoPath,
         selectedWorkspaceId: validatedWorkspaceId,
