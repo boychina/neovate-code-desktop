@@ -183,12 +183,16 @@ export const WorkspacePanel = ({
     setMessages,
   ]);
 
-  // Fetch model info when selectedSessionId changes to initialize thinking state
+  // Fetch model info once per session to initialize thinking state
   useEffect(() => {
     if (!selectedSessionId || !selectedWorkspaceId) return;
 
     const workspace = workspaces[selectedWorkspaceId];
     if (!workspace) return;
+
+    // Check if already initialized for this session
+    const sessionInput = getSessionInput(selectedSessionId);
+    if (sessionInput.thinkingInitialized) return;
 
     const fetchModelInfo = async () => {
       try {
@@ -206,12 +210,14 @@ export const WorkspacePanel = ({
           setSessionInput(selectedSessionId, {
             thinkingEnabled: hasThinkingConfig,
             thinking: hasThinkingConfig ? 'low' : null,
+            thinkingInitialized: true,
           });
         } else {
           // Model doesn't support thinking
           setSessionInput(selectedSessionId, {
             thinkingEnabled: false,
             thinking: null,
+            thinkingInitialized: true,
           });
         }
       } catch (error) {
@@ -220,6 +226,7 @@ export const WorkspacePanel = ({
         setSessionInput(selectedSessionId, {
           thinkingEnabled: false,
           thinking: null,
+          thinkingInitialized: true,
         });
       }
     };
@@ -230,6 +237,7 @@ export const WorkspacePanel = ({
     selectedWorkspaceId,
     workspaces,
     request,
+    getSessionInput,
     setSessionInput,
   ]);
 

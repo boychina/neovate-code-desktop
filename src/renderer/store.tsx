@@ -34,6 +34,7 @@ export interface SessionInputState {
   planMode: PlanMode;
   thinking: ThinkingLevel;
   thinkingEnabled: boolean;
+  thinkingInitialized: boolean;
   pastedTextMap: Record<string, string>;
   pastedImageMap: Record<string, string>;
 }
@@ -46,6 +47,7 @@ const defaultSessionInputState: SessionInputState = {
   planMode: 'normal',
   thinking: null,
   thinkingEnabled: false,
+  thinkingInitialized: false,
   pastedTextMap: {},
   pastedImageMap: {},
 };
