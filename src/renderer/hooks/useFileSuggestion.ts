@@ -29,16 +29,16 @@ export function useFileSuggestion({
   const [isLoading, setIsLoading] = useState(false);
 
   const atMatch = useMemo((): MatchResult => {
-    console.log(
-      '[useFileSuggestion] computing atMatch, value:',
-      JSON.stringify(value),
-      'cursorPosition:',
-      cursorPosition,
-    );
+    // console.log(
+    //   '[useFileSuggestion] computing atMatch, value:',
+    //   JSON.stringify(value),
+    //   'cursorPosition:',
+    //   cursorPosition,
+    // );
     const tokenRange = findAtTokenAtCursor(value, cursorPosition);
 
     if (!tokenRange) {
-      console.log('[useFileSuggestion] no tokenRange found');
+      // console.log('[useFileSuggestion] no tokenRange found');
       return {
         hasQuery: false,
         fullMatch: '',
@@ -55,13 +55,13 @@ export function useFileSuggestion({
       query = query.slice(1).replace(/"$/, '');
     }
 
-    console.log('[useFileSuggestion] atMatch result:', {
-      hasQuery: true,
-      fullMatch,
-      query,
-      startIndex,
-      triggerType: 'at',
-    });
+    // console.log('[useFileSuggestion] atMatch result:', {
+    //   hasQuery: true,
+    //   fullMatch,
+    //   query,
+    //   startIndex,
+    //   triggerType: 'at',
+    // });
     return {
       hasQuery: true,
       fullMatch,

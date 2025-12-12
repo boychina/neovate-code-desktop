@@ -371,7 +371,6 @@ const useStore = create<Store>()((set, get) => ({
     });
 
     onEvent('chunk', (data: any) => {
-      console.log('chunk', data);
       // Increment token count for the session
       if (data.sessionId) {
         const { setSessionProcessing, getSessionProcessing } = get();

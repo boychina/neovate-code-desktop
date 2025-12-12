@@ -15,12 +15,12 @@ export function findAtTokenAtCursor(
   const pattern = /(?:^|\s)(@(?:"[^"]*"?|[^\s]*))/g;
   let match;
 
-  console.log(
-    '[findAtTokenAtCursor] value:',
-    JSON.stringify(value),
-    'cursorPosition:',
-    cursorPosition,
-  );
+  // console.log(
+  //   '[findAtTokenAtCursor] value:',
+  //   JSON.stringify(value),
+  //   'cursorPosition:',
+  //   cursorPosition,
+  // );
 
   const allMatches: Array<{
     fullMatch: string;
@@ -34,24 +34,24 @@ export function findAtTokenAtCursor(
     const endIndex = startIndex + fullMatch.length;
     allMatches.push({ fullMatch, startIndex, endIndex });
 
-    console.log('[findAtTokenAtCursor] found match:', {
-      fullMatch,
-      startIndex,
-      endIndex,
-      cursorInRange: cursorPosition >= startIndex && cursorPosition <= endIndex,
-    });
+    // console.log('[findAtTokenAtCursor] found match:', {
+    //   fullMatch,
+    //   startIndex,
+    //   endIndex,
+    //   cursorInRange: cursorPosition >= startIndex && cursorPosition <= endIndex,
+    // });
 
     if (cursorPosition >= startIndex && cursorPosition <= endIndex) {
-      console.log('[findAtTokenAtCursor] returning match:', {
-        startIndex,
-        endIndex,
-        fullMatch,
-      });
+      // console.log('[findAtTokenAtCursor] returning match:', {
+      //   startIndex,
+      //   endIndex,
+      //   fullMatch,
+      // });
       return { startIndex, endIndex, fullMatch };
     }
   }
 
-  console.log('[findAtTokenAtCursor] no match found, all matches:', allMatches);
+  // console.log('[findAtTokenAtCursor] no match found, all matches:', allMatches);
   return null;
 }
 
