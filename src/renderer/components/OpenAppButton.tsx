@@ -8,6 +8,16 @@ import {
 } from '@/components/ui/menu';
 import { ChevronDown, Loader2 } from 'lucide-react';
 import type { App, HandlerMap, HandlerOutput } from '../nodeBridge.types';
+import cursorIcon from '../assets/icons/cursor.png';
+import finderIcon from '../assets/icons/finder.png';
+import itermIcon from '../assets/icons/iterm.png';
+import sourcetreeIcon from '../assets/icons/sourcetree.png';
+import terminalIcon from '../assets/icons/terminal.png';
+import vscodeInsidersIcon from '../assets/icons/vscode-insiders.png';
+import vscodeIcon from '../assets/icons/vscode.png';
+import warpIcon from '../assets/icons/warp.png';
+import windsurfIcon from '../assets/icons/windsurf.png';
+import zedIcon from '../assets/icons/zed.png';
 
 /**
  * User-friendly display names for apps
@@ -24,6 +34,19 @@ const APP_NAMES: Record<App, string> = {
   antigravity: 'Antigravity',
   finder: 'Finder',
   sourcetree: 'Sourcetree',
+};
+
+const APP_ICON_SRC: Partial<Record<App, string>> = {
+  cursor: cursorIcon,
+  vscode: vscodeIcon,
+  'vscode-insiders': vscodeInsidersIcon,
+  zed: zedIcon,
+  windsurf: windsurfIcon,
+  iterm: itermIcon,
+  warp: warpIcon,
+  terminal: terminalIcon,
+  finder: finderIcon,
+  sourcetree: sourcetreeIcon,
 };
 
 interface OpenAppButtonProps {
@@ -96,11 +119,23 @@ export function OpenAppButton({ cwd, request }: OpenAppButtonProps) {
             </span>
           </div>
         ) : (
-          apps.map((app) => (
-            <DropdownMenuItem key={app} onClick={() => handleOpenApp(app)}>
-              {APP_NAMES[app]}
-            </DropdownMenuItem>
-          ))
+          apps.map((app) => {
+            const iconSrc = APP_ICON_SRC[app];
+            return (
+              <DropdownMenuItem key={app} onClick={() => handleOpenApp(app)}>
+                {iconSrc ? (
+                  <img
+                    alt=""
+                    className="size-4 shrink-0 pointer-events-none"
+                    src={iconSrc}
+                  />
+                ) : (
+                  <span className="size-4 shrink-0" />
+                )}
+                <span>{APP_NAMES[app]}</span>
+              </DropdownMenuItem>
+            );
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -19,10 +19,10 @@ describe('useStore', () => {
     expect(store.messageBus).toBeNull();
   });
 
-  it('should throw error when making request while not connected', () => {
+  it('should throw error when making request while not connected', async () => {
     const { request } = useStore.getState();
 
-    expect(() => request('method', {})).toThrow(
+    await expect(request('method' as any, {} as any)).rejects.toThrow(
       'Cannot make request when not connected. Current state: disconnected',
     );
   });
