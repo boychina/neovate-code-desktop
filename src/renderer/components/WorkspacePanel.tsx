@@ -132,7 +132,14 @@ export const WorkspacePanel = ({
         });
 
         if (response.success) {
-          setSessions(selectedWorkspaceId, response.data.sessions);
+          const sessions: SessionData[] = response.data.sessions.map(
+            (s: any) => ({
+              ...s,
+              modified: new Date(s.modified).getTime(),
+              created: new Date(s.created).getTime(),
+            }),
+          );
+          setSessions(selectedWorkspaceId, sessions);
         }
       } catch (error) {
         console.error('Failed to fetch sessions:', error);
@@ -357,6 +364,7 @@ export const WorkspacePanel = ({
               if (selectedSessionId) {
                 cancelSession(selectedSessionId);
               }
+              setIsLoading(false);
             }}
             onShowForkModal={() => {
               alert('fork not implemented');
