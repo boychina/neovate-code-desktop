@@ -59,7 +59,6 @@ import {
 } from './ui/empty';
 import { Button } from './ui/button';
 import { AddRepoMenu } from './AddRepoMenu';
-import { toastManager } from './ui/toast';
 
 export const RepoSidebar = ({
   repos,
@@ -84,8 +83,6 @@ export const RepoSidebar = ({
   const sessions = useStore((state) => state.sessions);
   const selectedSessionId = useStore((state) => state.selectedSessionId);
   const deleteRepo = useStore((state) => state.deleteRepo);
-  const request = useStore((state) => state.request);
-  const addWorkspace = useStore((state) => state.addWorkspace);
   const selectWorkspace = useStore((state) => state.selectWorkspace);
   const selectSession = useStore((state) => state.selectSession);
   const createSession = useStore((state) => state.createSession);
@@ -115,64 +112,6 @@ export const RepoSidebar = ({
       setAlertDialogOpen(false);
       setDialogOpen(false);
       setSelectedRepoForDialog(null);
-    }
-  };
-
-  const handleNewWorkspace = async (repoPath: string) => {
-    if (!openRepos.includes(repoPath)) {
-      setOpenRepoAccordions([...openRepos, repoPath]);
-    }
-
-    try {
-      // Step 1: Create workspace
-      const createResponse = await request('project.workspaces.create', {
-        cwd: repoPath,
-        skipUpdate: true,
-      });
-
-      if (!createResponse.success) {
-        toastManager.add({
-          title: 'Workspace Creation Failed',
-          description: createResponse.error || 'Failed to create workspace',
-          type: 'error',
-        });
-        return;
-      }
-
-      // Step 2: Fetch full workspace details
-      const workspaceId = createResponse.data?.workspace.name;
-      if (!workspaceId) {
-        toastManager.add({
-          title: 'Workspace Creation Failed',
-          description: 'Invalid workspace response from server',
-          type: 'error',
-        });
-        return;
-      }
-
-      const fetchResponse = await request('project.workspaces.get', {
-        cwd: repoPath,
-        workspaceId,
-      });
-
-      if (!fetchResponse.success || !fetchResponse.data) {
-        toastManager.add({
-          title: 'Failed to load workspace',
-          description: 'Workspace created but could not load details',
-          type: 'warning',
-        });
-        return;
-      }
-
-      // Step 3: Add to store and select
-      addWorkspace(fetchResponse.data);
-      selectWorkspace(workspaceId);
-    } catch (error) {
-      toastManager.add({
-        title: 'Workspace Creation Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        type: 'error',
-      });
     }
   };
 
@@ -245,40 +184,10 @@ export const RepoSidebar = ({
                   </AccordionTrigger>
 
                   <AccordionPanel>
-                    <div className="ml-4 space-y-1">
-                      <button
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors w-full text-left"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          backgroundColor: 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor =
-                            'var(--bg-base-hover)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
-                        onClick={() => handleNewWorkspace(repo.path)}
-                      >
-                        <HugeiconsIcon
-                          icon={PlusSignIcon}
-                          size={16}
-                          strokeWidth={1.5}
-                        />
-                        <span className="text-sm font-medium">
-                          New workspace
-                        </span>
-                      </button>
-
-                      {repo.workspaceIds.map((workspaceId) => {
+                    <div className="space-y-1">
+                      {repo.workspaceIds.slice(0, 1).map((workspaceId) => {
                         const workspace = workspaces[workspaceId];
                         if (!workspace) return null;
-
-                        const isWorkspaceSelected =
-                          selectedWorkspaceId === workspaceId;
-                        const changesCount =
-                          workspace.gitState.pendingChanges.length;
 
                         // Get sessions for this workspace, sorted by modified (newest first)
                         const workspaceSessions = (sessions[workspaceId] || [])
@@ -294,53 +203,8 @@ export const RepoSidebar = ({
 
                         return (
                           <div key={workspaceId}>
-                            <div
-                              className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors"
-                              style={{
-                                backgroundColor: isWorkspaceSelected
-                                  ? 'var(--bg-base)'
-                                  : 'transparent',
-                                color: isWorkspaceSelected
-                                  ? 'var(--text-primary)'
-                                  : 'var(--text-secondary)',
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isWorkspaceSelected) {
-                                  e.currentTarget.style.backgroundColor =
-                                    'var(--bg-base-hover)';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isWorkspaceSelected) {
-                                  e.currentTarget.style.backgroundColor =
-                                    'transparent';
-                                }
-                              }}
-                              onClick={() => onSelectWorkspace(workspaceId)}
-                            >
-                              <HugeiconsIcon
-                                icon={GitBranchIcon}
-                                size={16}
-                                strokeWidth={1.5}
-                              />
-                              <span className="flex-1 text-sm">
-                                {workspace.branch}
-                              </span>
-                              {changesCount > 0 && (
-                                <span
-                                  className="text-xs px-1.5 py-0.5 rounded"
-                                  style={{
-                                    backgroundColor: '#fef3c7',
-                                    color: '#92400e',
-                                  }}
-                                >
-                                  {changesCount}
-                                </span>
-                              )}
-                            </div>
-
                             {/* Session list */}
-                            <div className="ml-4">
+                            <div>
                               {/* Create session button */}
                               <button
                                 className="flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors w-full text-left"
