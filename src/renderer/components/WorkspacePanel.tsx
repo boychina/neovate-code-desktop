@@ -461,23 +461,6 @@ WorkspacePanel.Header = function Header() {
         </div>
         <div className="flex gap-2">
           <OpenAppButton cwd={workspace.worktreePath} request={request} />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm">
-                  Complete <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleMerge}>
-                Merge to origin branch
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCreatePR}>
-                Create PR to remote
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
     </div>
