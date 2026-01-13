@@ -85,7 +85,11 @@ export function useInputHandlers({
 
   const slashCommands = useSlashCommands({ value, fetchCommands });
   const pasteManager = usePasteManager(pastedTextMap, setPastedTextMap);
-  const imageManager = useImagePasteManager(pastedImageMap, setPastedImageMap);
+  const imageManager = useImagePasteManager(
+    sessionId,
+    pastedImageMap,
+    setPastedImageMap,
+  );
 
   const hasSuggestions =
     fileSuggestion.matchedPaths.length > 0 ||
