@@ -377,6 +377,8 @@ export const ChatInput = memo(
           metaKey: false,
           shiftKey: false,
           altKey: false,
+          // Required: onKeyDown checks isComposing to avoid submitting during IME composition (e.g., Chinese input)
+          nativeEvent: { isComposing: false },
         } as React.KeyboardEvent<HTMLTextAreaElement>;
         handlers.onKeyDown(submitEvent);
       }
