@@ -352,19 +352,26 @@ export function useInputHandlers({
 
       if (e.ctrlKey) {
         switch (e.key.toLowerCase()) {
-          case 'a':
+          case 'a': {
             e.preventDefault();
-            textarea.setSelectionRange(0, 0);
-            inputState.setCursorPosition(0);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
+            const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+            textarea.setSelectionRange(lineStart, lineStart);
+            inputState.setCursorPosition(lineStart);
             break;
-          case 'e':
+          }
+          case 'e': {
             e.preventDefault();
-            textarea.setSelectionRange(
-              currentValue.length,
-              currentValue.length,
-            );
-            inputState.setCursorPosition(currentValue.length);
+            const afterCursor = currentValue.slice(currentCursorPosition);
+            const newlineIndex = afterCursor.indexOf('\n');
+            const lineEnd =
+              newlineIndex === -1
+                ? currentValue.length
+                : currentCursorPosition + newlineIndex;
+            textarea.setSelectionRange(lineEnd, lineEnd);
+            inputState.setCursorPosition(lineEnd);
             break;
+          }
           case 'd':
             if (currentValue) {
               e.preventDefault();
@@ -394,16 +401,40 @@ export function useInputHandlers({
               );
             }
             break;
-          case 'k':
+          case 'k': {
             e.preventDefault();
-            inputState.setValue(currentValue.slice(0, currentCursorPosition));
+            const afterCursor = currentValue.slice(currentCursorPosition);
+            const newlineIndex = afterCursor.indexOf('\n');
+            const lineEnd =
+              newlineIndex === -1
+                ? currentValue.length
+                : currentCursorPosition + newlineIndex;
+            inputState.setValue(
+              currentValue.slice(0, currentCursorPosition) +
+                currentValue.slice(lineEnd),
+            );
+            requestAnimationFrame(() => {
+              textarea.setSelectionRange(
+                currentCursorPosition,
+                currentCursorPosition,
+              );
+            });
             break;
-          case 'u':
+          }
+          case 'u': {
             e.preventDefault();
-            inputState.setValue(currentValue.slice(currentCursorPosition));
-            inputState.setCursorPosition(0);
-            textarea.setSelectionRange(0, 0);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
+            const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+            inputState.setValue(
+              currentValue.slice(0, lineStart) +
+                currentValue.slice(currentCursorPosition),
+            );
+            inputState.setCursorPosition(lineStart);
+            requestAnimationFrame(() => {
+              textarea.setSelectionRange(lineStart, lineStart);
+            });
             break;
+          }
           case 'w': {
             e.preventDefault();
             const beforeCursor = currentValue.slice(0, currentCursorPosition);
