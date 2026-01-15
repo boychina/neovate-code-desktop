@@ -1,18 +1,5 @@
 import React from 'react';
 
-declare global {
-  interface Window {
-    electron?: {
-      platform: string;
-      versions: {
-        node: string;
-        chrome: string;
-        electron: string;
-      };
-    };
-  }
-}
-
 export const SystemInfo = () => {
   const electron = window.electron;
 

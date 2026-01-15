@@ -138,7 +138,6 @@ export function TestUIComponents() {
       title: `${type.charAt(0).toUpperCase() + type.slice(1)} Toast`,
       description: `This is a ${type} toast notification`,
       type,
-      duration: 3000,
     });
   };
 
@@ -301,7 +300,10 @@ export function TestUIComponents() {
             {/* Radio Buttons Section */}
             <section className="space-y-4">
               <h2 className="text-2xl font-semibold">Radio Buttons</h2>
-              <RadioGroup value={radioValue} onValueChange={setRadioValue}>
+              <RadioGroup
+                value={radioValue}
+                onValueChange={(value) => setRadioValue(value as string)}
+              >
                 <div className="flex items-center gap-2">
                   <Radio value="option1" />
                   <label>Option 1</label>
@@ -329,7 +331,7 @@ export function TestUIComponents() {
               <div className="space-y-4 max-w-md">
                 <Select value={selectValue} onValueChange={setSelectValue}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a fruit" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectGroup>
@@ -349,7 +351,7 @@ export function TestUIComponents() {
 
                 <Select>
                   <SelectTrigger size="sm">
-                    <SelectValue placeholder="Small select" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectItem value="1">Option 1</SelectItem>
@@ -359,7 +361,7 @@ export function TestUIComponents() {
 
                 <Select>
                   <SelectTrigger size="lg">
-                    <SelectValue placeholder="Large select" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectItem value="1">Option 1</SelectItem>

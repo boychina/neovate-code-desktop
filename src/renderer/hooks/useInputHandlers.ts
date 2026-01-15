@@ -1,11 +1,16 @@
-import { useCallback, useState, useRef } from 'react';
-import { useInputState } from './useInputState';
-import { useFileSuggestion } from './useFileSuggestion';
-import { useSlashCommands, type SlashCommand } from './useSlashCommands';
-import { usePasteManager } from './usePasteManager';
-import { useImagePasteManager } from './useImagePasteManager';
-import { useDoublePress } from './useDoublePress';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toastManager } from '../components/ui/toast';
+import type {
+  HandlerInput,
+  HandlerMethod,
+  HandlerOutput,
+} from '../nodeBridge.types';
+import { useDoublePress } from './useDoublePress';
+import { useFileSuggestion } from './useFileSuggestion';
+import { useImagePasteManager } from './useImagePasteManager';
+import { useInputState } from './useInputState';
+import { usePasteManager } from './usePasteManager';
+import { type SlashCommand, useSlashCommands } from './useSlashCommands';
 
 const LARGE_PASTE_THRESHOLD = 800;
 
@@ -15,9 +20,13 @@ interface UseInputHandlersProps {
   onSubmit: (value: string, images?: string[]) => void;
   onCancel: () => void;
   onShowForkModal: () => void;
-  fetchPaths: () => Promise<string[]>;
   fetchCommands: () => Promise<SlashCommand[]>;
   isProcessing?: boolean;
+  request: <K extends HandlerMethod>(
+    method: K,
+    params: HandlerInput<K>,
+  ) => Promise<HandlerOutput<K>>;
+  cwd: string;
 }
 
 export function useInputHandlers({
@@ -26,12 +35,23 @@ export function useInputHandlers({
   onSubmit,
   onCancel,
   onShowForkModal,
-  fetchPaths,
   fetchCommands,
   isProcessing,
+  request,
+  cwd,
 }: UseInputHandlersProps) {
   const inputState = useInputState(sessionId, workspaceId);
   const { value, cursorPosition, mode } = inputState.state;
+
+  const valueRef = useRef(value);
+  const cursorPositionRef = useRef(cursorPosition);
+  const modeRef = useRef(mode);
+
+  useEffect(() => {
+    valueRef.current = value;
+    cursorPositionRef.current = cursorPosition;
+    modeRef.current = mode;
+  }, [value, cursorPosition, mode]);
 
   const {
     historyIndex,
@@ -59,12 +79,17 @@ export function useInputHandlers({
     value,
     cursorPosition,
     forceTabTrigger,
-    fetchPaths,
+    request,
+    cwd,
   });
 
   const slashCommands = useSlashCommands({ value, fetchCommands });
   const pasteManager = usePasteManager(pastedTextMap, setPastedTextMap);
-  const imageManager = useImagePasteManager(pastedImageMap, setPastedImageMap);
+  const imageManager = useImagePasteManager(
+    sessionId,
+    pastedImageMap,
+    setPastedImageMap,
+  );
 
   const hasSuggestions =
     fileSuggestion.matchedPaths.length > 0 ||
@@ -73,7 +98,12 @@ export function useInputHandlers({
   const handleDoubleEscape = useDoublePress(
     onShowForkModal,
     () => {
-      if ((mode === 'bash' || mode === 'memory') && value.length === 1) {
+      const currentMode = modeRef.current;
+      const currentValue = valueRef.current;
+      if (
+        (currentMode === 'bash' || currentMode === 'memory') &&
+        currentValue.length === 1
+      ) {
         inputState.setValue('');
       } else {
         onCancel();
@@ -86,20 +116,21 @@ export function useInputHandlers({
     const selected = fileSuggestion.getSelected();
     if (!selected) return;
 
+    const currentValue = valueRef.current;
     const prefix = fileSuggestion.triggerType === 'at' ? '@' : '';
-    const before = value.substring(0, fileSuggestion.startIndex);
-    const after = value
+    const before = currentValue.substring(0, fileSuggestion.startIndex);
+    const after = currentValue
       .substring(fileSuggestion.startIndex + fileSuggestion.fullMatch.length)
       .trim();
     const newValue = `${before}${prefix}${selected} ${after}`.trim();
 
     inputState.setValue(newValue);
-    inputState.setCursorPosition(`${before}${prefix}${selected} `.length);
+    inputState.setCursorPosition(newValue.length);
     setForceTabTrigger(false);
-  }, [fileSuggestion, inputState, value]);
+    fileSuggestion.reset();
+  }, [fileSuggestion, inputState]);
 
   const handleSubmit = useCallback(() => {
-    // Block submission during processing
     if (isProcessing) {
       toastManager.add({
         type: 'warning',
@@ -109,7 +140,6 @@ export function useInputHandlers({
       return;
     }
 
-    // When suggestions are visible, Enter only applies the suggestion without submitting
     if (slashCommands.suggestions.length > 0) {
       const completed = slashCommands.getCompletedCommand();
       inputState.setValue(completed);
@@ -122,20 +152,27 @@ export function useInputHandlers({
       return;
     }
 
-    const trimmed = value.trim();
+    const currentValue = valueRef.current;
+    const currentPlanMode = planMode;
+    const currentMode = modeRef.current;
+    const trimmed = currentValue.trim();
     if (!trimmed) return;
 
-    // In plan mode, show alert instead of submitting
-    if (planMode === 'plan') {
-      alert('Plan mode is not implemented yet');
+    if (currentPlanMode === 'plan') {
+      toastManager.add({
+        type: 'info',
+        title: 'Plan mode',
+        description: 'Plan mode is not implemented yet',
+      });
       return;
     }
 
-    // In memory mode or bash mode, show alert instead of submitting
-    if (mode === 'memory' || mode === 'bash') {
-      alert(
-        `${mode.charAt(0).toUpperCase() + mode.slice(1)} mode is not implemented yet`,
-      );
+    if (currentMode === 'memory' || currentMode === 'bash') {
+      toastManager.add({
+        type: 'info',
+        title: `${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} mode`,
+        description: `${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} mode is not implemented yet`,
+      });
       return;
     }
 
@@ -147,7 +184,6 @@ export function useInputHandlers({
     inputState.reset();
     onSubmit(expandedMessage, images.length > 0 ? images : undefined);
   }, [
-    value,
     slashCommands,
     fileSuggestion,
     applyFileSuggestion,
@@ -158,7 +194,6 @@ export function useInputHandlers({
     imageManager,
     planMode,
     isProcessing,
-    mode,
   ]);
 
   const handleHistoryUp = useCallback(() => {
@@ -173,8 +208,9 @@ export function useInputHandlers({
 
     if (history.length === 0) return;
 
+    const currentValue = valueRef.current;
     if (historyIndex === null) {
-      setDraftInput(value);
+      setDraftInput(currentValue);
       setHistoryIndex(history.length - 1);
       inputState.setValue(history[history.length - 1]);
     } else if (historyIndex > 0) {
@@ -188,7 +224,6 @@ export function useInputHandlers({
     fileSuggestion,
     history,
     historyIndex,
-    value,
     setDraftInput,
     setHistoryIndex,
     inputState,
@@ -225,37 +260,56 @@ export function useInputHandlers({
   ]);
 
   const isAtFirstLine = useCallback(() => {
-    const beforeCursor = value.substring(0, cursorPosition);
+    const currentValue = valueRef.current;
+    const currentCursorPosition = cursorPositionRef.current;
+    const beforeCursor = currentValue.substring(0, currentCursorPosition);
     return !beforeCursor.includes('\n');
-  }, [value, cursorPosition]);
+  }, []);
 
   const isAtLastLine = useCallback(() => {
-    const afterCursor = value.substring(cursorPosition);
+    const currentValue = valueRef.current;
+    const currentCursorPosition = cursorPositionRef.current;
+    const afterCursor = currentValue.substring(currentCursorPosition);
     return !afterCursor.includes('\n');
-  }, [value, cursorPosition]);
+  }, []);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const textarea = e.currentTarget;
+      const currentValue = valueRef.current;
+      const currentCursorPosition = cursorPositionRef.current;
 
-      // Escape handling
       if (e.key === 'Escape') {
         e.preventDefault();
         handleDoubleEscape();
         return;
       }
 
-      // Enter handling
       if (e.key === 'Enter') {
-        if (e.metaKey || e.shiftKey || e.altKey) {
-          return; // Allow newline
+        // Ignore Enter during IME composition (e.g., Chinese input selecting candidates)
+        if (e.nativeEvent.isComposing) {
+          return;
+        }
+        if (e.altKey) {
+          e.preventDefault();
+          const before = currentValue.slice(0, currentCursorPosition);
+          const after = currentValue.slice(currentCursorPosition);
+          const newPos = currentCursorPosition + 1;
+          inputState.setValue(`${before}\n${after}`);
+          inputState.setCursorPosition(newPos);
+          requestAnimationFrame(() => {
+            textarea.setSelectionRange(newPos, newPos);
+          });
+          return;
+        }
+        if (e.metaKey || e.shiftKey) {
+          return;
         }
         e.preventDefault();
         handleSubmit();
         return;
       }
 
-      // Tab handling
       if (e.key === 'Tab') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -270,13 +324,12 @@ export function useInputHandlers({
           } else {
             applyFileSuggestion();
           }
-        } else if (value.trim()) {
+        } else if (currentValue.trim()) {
           setForceTabTrigger(true);
         }
         return;
       }
 
-      // Arrow up/down
       if (e.key === 'ArrowUp') {
         if (e.altKey || e.metaKey) {
           e.preventDefault();
@@ -297,66 +350,100 @@ export function useInputHandlers({
         return;
       }
 
-      // Ctrl shortcuts
       if (e.ctrlKey) {
         switch (e.key.toLowerCase()) {
-          case 'a':
+          case 'a': {
             e.preventDefault();
-            textarea.setSelectionRange(0, 0);
-            inputState.setCursorPosition(0);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
+            const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+            textarea.setSelectionRange(lineStart, lineStart);
+            inputState.setCursorPosition(lineStart);
             break;
-          case 'e':
+          }
+          case 'e': {
             e.preventDefault();
-            textarea.setSelectionRange(value.length, value.length);
-            inputState.setCursorPosition(value.length);
+            const afterCursor = currentValue.slice(currentCursorPosition);
+            const newlineIndex = afterCursor.indexOf('\n');
+            const lineEnd =
+              newlineIndex === -1
+                ? currentValue.length
+                : currentCursorPosition + newlineIndex;
+            textarea.setSelectionRange(lineEnd, lineEnd);
+            inputState.setCursorPosition(lineEnd);
             break;
+          }
           case 'd':
-            if (value) {
+            if (currentValue) {
               e.preventDefault();
               const newValue =
-                value.slice(0, cursorPosition) +
-                value.slice(cursorPosition + 1);
+                currentValue.slice(0, currentCursorPosition) +
+                currentValue.slice(currentCursorPosition + 1);
               inputState.setValue(newValue);
             }
             break;
           case 'f':
             e.preventDefault();
-            if (cursorPosition < value.length) {
-              inputState.setCursorPosition(cursorPosition + 1);
+            if (currentCursorPosition < currentValue.length) {
+              inputState.setCursorPosition(currentCursorPosition + 1);
               textarea.setSelectionRange(
-                cursorPosition + 1,
-                cursorPosition + 1,
+                currentCursorPosition + 1,
+                currentCursorPosition + 1,
               );
             }
             break;
           case 'b':
             e.preventDefault();
-            if (cursorPosition > 0) {
-              inputState.setCursorPosition(cursorPosition - 1);
+            if (currentCursorPosition > 0) {
+              inputState.setCursorPosition(currentCursorPosition - 1);
               textarea.setSelectionRange(
-                cursorPosition - 1,
-                cursorPosition - 1,
+                currentCursorPosition - 1,
+                currentCursorPosition - 1,
               );
             }
             break;
-          case 'k':
+          case 'k': {
             e.preventDefault();
-            inputState.setValue(value.slice(0, cursorPosition));
+            const afterCursor = currentValue.slice(currentCursorPosition);
+            const newlineIndex = afterCursor.indexOf('\n');
+            const lineEnd =
+              newlineIndex === -1
+                ? currentValue.length
+                : currentCursorPosition + newlineIndex;
+            inputState.setValue(
+              currentValue.slice(0, currentCursorPosition) +
+                currentValue.slice(lineEnd),
+            );
+            requestAnimationFrame(() => {
+              textarea.setSelectionRange(
+                currentCursorPosition,
+                currentCursorPosition,
+              );
+            });
             break;
-          case 'u':
+          }
+          case 'u': {
             e.preventDefault();
-            inputState.setValue(value.slice(cursorPosition));
-            inputState.setCursorPosition(0);
-            textarea.setSelectionRange(0, 0);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
+            const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+            inputState.setValue(
+              currentValue.slice(0, lineStart) +
+                currentValue.slice(currentCursorPosition),
+            );
+            inputState.setCursorPosition(lineStart);
+            requestAnimationFrame(() => {
+              textarea.setSelectionRange(lineStart, lineStart);
+            });
             break;
+          }
           case 'w': {
             e.preventDefault();
-            const beforeCursor = value.slice(0, cursorPosition);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
             const wordMatch = beforeCursor.match(/\S+\s*$/);
             if (wordMatch) {
-              const newPos = cursorPosition - wordMatch[0].length;
+              const newPos = currentCursorPosition - wordMatch[0].length;
               inputState.setValue(
-                value.slice(0, newPos) + value.slice(cursorPosition),
+                currentValue.slice(0, newPos) +
+                  currentValue.slice(currentCursorPosition),
               );
               inputState.setCursorPosition(newPos);
               textarea.setSelectionRange(newPos, newPos);
@@ -365,12 +452,12 @@ export function useInputHandlers({
           }
           case 'h':
             e.preventDefault();
-            if (cursorPosition > 0) {
+            if (currentCursorPosition > 0) {
               inputState.setValue(
-                value.slice(0, cursorPosition - 1) +
-                  value.slice(cursorPosition),
+                currentValue.slice(0, currentCursorPosition - 1) +
+                  currentValue.slice(currentCursorPosition),
               );
-              inputState.setCursorPosition(cursorPosition - 1);
+              inputState.setCursorPosition(currentCursorPosition - 1);
             }
             break;
           case 't':
@@ -389,36 +476,35 @@ export function useInputHandlers({
         return;
       }
 
-      // Meta shortcuts
       if (e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'b': {
             e.preventDefault();
-            const beforeCursor = value.slice(0, cursorPosition);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
             const match = beforeCursor.match(/\S+\s*$/);
-            const newPos = match ? cursorPosition - match[0].length : 0;
+            const newPos = match ? currentCursorPosition - match[0].length : 0;
             inputState.setCursorPosition(newPos);
             textarea.setSelectionRange(newPos, newPos);
             break;
           }
           case 'f': {
             e.preventDefault();
-            const afterCursor = value.slice(cursorPosition);
+            const afterCursor = currentValue.slice(currentCursorPosition);
             const match = afterCursor.match(/^\s*\S+/);
             const newPos = match
-              ? cursorPosition + match[0].length
-              : value.length;
+              ? currentCursorPosition + match[0].length
+              : currentValue.length;
             inputState.setCursorPosition(newPos);
             textarea.setSelectionRange(newPos, newPos);
             break;
           }
           case 'd': {
             e.preventDefault();
-            const afterCursor = value.slice(cursorPosition);
+            const afterCursor = currentValue.slice(currentCursorPosition);
             const match = afterCursor.match(/^\s*\S+/);
             if (match) {
               inputState.setValue(
-                value.slice(0, cursorPosition) +
+                currentValue.slice(0, currentCursorPosition) +
                   afterCursor.slice(match[0].length),
               );
             }
@@ -426,12 +512,13 @@ export function useInputHandlers({
           }
           case 'backspace': {
             e.preventDefault();
-            const beforeCursor = value.slice(0, cursorPosition);
+            const beforeCursor = currentValue.slice(0, currentCursorPosition);
             const match = beforeCursor.match(/\S+\s*$/);
             if (match) {
-              const newPos = cursorPosition - match[0].length;
+              const newPos = currentCursorPosition - match[0].length;
               inputState.setValue(
-                value.slice(0, newPos) + value.slice(cursorPosition),
+                currentValue.slice(0, newPos) +
+                  currentValue.slice(currentCursorPosition),
               );
               inputState.setCursorPosition(newPos);
             }
@@ -441,8 +528,6 @@ export function useInputHandlers({
       }
     },
     [
-      value,
-      cursorPosition,
       hasSuggestions,
       slashCommands,
       inputState,
@@ -461,8 +546,9 @@ export function useInputHandlers({
   const onPaste = useCallback(
     async (e: React.ClipboardEvent) => {
       const items = e.clipboardData.items;
+      const currentValue = valueRef.current;
+      const currentCursorPosition = cursorPositionRef.current;
 
-      // Check for images first
       for (const item of items) {
         if (item.type.startsWith('image/')) {
           e.preventDefault();
@@ -470,8 +556,8 @@ export function useInputHandlers({
           if (file) {
             const result = await imageManager.handleImagePaste(file);
             if (result.success && result.prompt) {
-              const before = value.slice(0, cursorPosition);
-              const after = value.slice(cursorPosition);
+              const before = currentValue.slice(0, currentCursorPosition);
+              const after = currentValue.slice(currentCursorPosition);
               inputState.setValue(`${before}${result.prompt} ${after}`);
               inputState.setCursorPosition(
                 before.length + result.prompt.length + 1,
@@ -482,23 +568,21 @@ export function useInputHandlers({
         }
       }
 
-      // Handle text paste
       const text = e.clipboardData.getData('text');
       if (text.length > LARGE_PASTE_THRESHOLD || text.includes('\n')) {
         e.preventDefault();
         const result = await pasteManager.handleTextPaste(text);
         if (result.success && result.prompt) {
-          const before = value.slice(0, cursorPosition);
-          const after = value.slice(cursorPosition);
+          const before = currentValue.slice(0, currentCursorPosition);
+          const after = currentValue.slice(currentCursorPosition);
           inputState.setValue(`${before}${result.prompt} ${after}`);
           inputState.setCursorPosition(
             before.length + result.prompt.length + 1,
           );
         }
       }
-      // Small text: let browser handle normally
     },
-    [value, cursorPosition, inputState, imageManager, pasteManager],
+    [inputState, imageManager, pasteManager],
   );
 
   const onChange = useCallback(
@@ -506,19 +590,20 @@ export function useInputHandlers({
       const newValue = e.target.value;
       inputState.setValue(newValue);
       inputState.setCursorPosition(e.target.selectionStart);
-      setHistoryIndex(null);
+      if (historyIndex !== null) {
+        setHistoryIndex(null);
+      }
 
-      // Reset tab trigger if @ appears or value is empty
       if (newValue.includes('@') || newValue.trim() === '') {
         setForceTabTrigger(false);
       }
     },
-    [inputState, setHistoryIndex],
+    [inputState, historyIndex, setHistoryIndex],
   );
 
   const onSelect = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // @ts-ignore
+      // @ts-expect-error
       inputState.setCursorPosition(e.target.selectionStart);
     },
     [inputState],
@@ -551,9 +636,9 @@ export function useInputHandlers({
           : fileSuggestion.selectedIndex,
     },
     imageManager,
-    // Thinking state setters for external updates (e.g., model change)
     thinkingEnabled,
     setThinkingEnabled,
     setThinking,
+    isSearching: fileSuggestion.isLoading,
   };
 }

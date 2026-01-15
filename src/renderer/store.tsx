@@ -4,6 +4,7 @@ import { WebSocketTransport } from './client/transport/WebSocketTransport';
 import { MessageBus } from './client/messaging/MessageBus';
 import { randomUUID } from './utils/uuid';
 import { getNestedValue, setNestedValue } from './lib/utils';
+import { toastManager } from './components/ui/toast';
 import type {
   RepoData,
   WorkspaceData,
@@ -88,10 +89,17 @@ const defaultSessionProcessingState: SessionProcessingState = {
 
 interface StoreState {
   // WebSocket connection state
-  state: 'disconnected' | 'connecting' | 'connected' | 'error';
+  // Flow:
+  // idle -> connecting -> connected
+  // idle/connecting -> error (startup failure)
+  // connected -> disconnected -> connecting -> connected (reconnect loop)
+  state: 'idle' | 'disconnected' | 'connecting' | 'connected' | 'error';
   transport: WebSocketTransport | null;
   messageBus: MessageBus | null;
   initialized: boolean;
+
+  // Server URL
+  serverUrl: string | null;
 
   // Entity data
   repos: Record<RepoId, RepoData>;
@@ -116,6 +124,7 @@ interface StoreState {
   sidebarCollapsed: boolean;
   openRepoAccordions: string[];
   expandedSessionGroups: Record<string, boolean>;
+  isTestComponentVisible: boolean;
 
   // Config state
   globalConfig: Record<string, any> | null;
@@ -145,7 +154,11 @@ interface StoreActions {
     planMode: PlanMode;
     parentUuid?: string;
     think: ThinkingLevel;
+    images?: string[];
   }) => Promise<void>;
+
+  // Server URL action
+  setUrl: (url: string) => void;
 
   // Session processing state helpers
   getSessionProcessing: (sessionId: string) => SessionProcessingState;
@@ -197,8 +210,10 @@ interface StoreActions {
   selectSession: (id: string | null) => void;
   setShowSettings: (show: boolean) => void;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setOpenRepoAccordions: (ids: string[]) => void;
   toggleSessionGroupExpanded: (workspaceId: string) => void;
+  setTestComponentVisible: (visible: boolean) => void;
 
   // Config actions
   loadGlobalConfig: () => Promise<void>;
@@ -215,16 +230,22 @@ interface StoreActions {
 
   // Local JSX slash command actions
   setSlashCommandJSX: (sessionId: string, jsx: React.ReactNode | null) => void;
+
+  // Connection state setter
+  setConnectionState: (state: StoreState['state']) => void;
 }
 
 type Store = StoreState & StoreActions;
 
 const useStore = create<Store>()((set, get) => ({
   // Initial WebSocket state
-  state: 'disconnected',
+  state: 'idle',
   transport: null,
   messageBus: null,
   initialized: false,
+
+  // Initial server URL
+  serverUrl: null,
 
   // Initial entity data
   repos: {},
@@ -249,6 +270,7 @@ const useStore = create<Store>()((set, get) => ({
   sidebarCollapsed: false,
   openRepoAccordions: [],
   expandedSessionGroups: {},
+  isTestComponentVisible: false,
 
   // Initial config state
   globalConfig: null,
@@ -263,23 +285,25 @@ const useStore = create<Store>()((set, get) => ({
   slashCommandJSXBySession: {},
 
   connect: async () => {
-    const { transport } = get();
+    const { transport, serverUrl } = get();
     if (transport?.isConnected()) {
       return;
     }
 
     set({ state: 'connecting' });
 
+    const url = serverUrl ?? 'ws://localhost:1024/ws';
+
     try {
       const newTransport = new WebSocketTransport({
-        url: 'ws://localhost:1024/ws',
+        url,
         reconnectInterval: 1000,
         maxReconnectInterval: 30000,
         shouldReconnect: true,
       });
 
       newTransport.onError(() => {
-        set({ state: 'error' });
+        set({ state: 'disconnected' });
       });
 
       newTransport.onClose(() => {
@@ -395,6 +419,8 @@ const useStore = create<Store>()((set, get) => ({
     set({ initialized: true });
   },
 
+  setUrl: (url) => set({ serverUrl: url }),
+
   getSessionProcessing: (sessionId: string): SessionProcessingState => {
     const { sessionProcessing } = get();
     return sessionProcessing[sessionId] || defaultSessionProcessingState;
@@ -468,6 +494,7 @@ const useStore = create<Store>()((set, get) => ({
     planMode: PlanMode;
     parentUuid?: string;
     think: ThinkingLevel;
+    images?: string[];
   }) => {
     const {
       selectedSessionId,
@@ -604,11 +631,19 @@ const useStore = create<Store>()((set, get) => ({
             }));
             return;
           } else {
-            alert(`${command} Local JSX commands are not supported`);
+            toastManager.add({
+              type: 'error',
+              title: 'Command not supported',
+              description: `${parsed.command} Local JSX commands are not supported`,
+            });
           }
           return;
         } else {
-          alert(`${command} Unknown slash command type: ${type}`);
+          toastManager.add({
+            type: 'error',
+            title: 'Unknown command type',
+            description: `${command} Unknown slash command type: ${type}`,
+          });
           return;
         }
       }
@@ -623,10 +658,46 @@ const useStore = create<Store>()((set, get) => ({
       retryInfo: null,
     });
 
+    // Fire-and-forget summarization on first message
+    const sessionMessages = get().messages[sessionId] || [];
+    const userMessages = sessionMessages.filter((m) => m.role === 'user');
+    if (userMessages.length === 0 && message) {
+      (async () => {
+        try {
+          const summary = await request('utils.summarizeMessage', {
+            message,
+            cwd,
+          });
+          if (summary.success && summary.data.text) {
+            const res = JSON.parse(summary.data.text.trim());
+            if (res.title) {
+              await request('session.config.setSummary', {
+                cwd,
+                sessionId,
+                summary: res.title,
+              });
+              updateSession(selectedWorkspaceId, sessionId, {
+                summary: res.title,
+              });
+            }
+          }
+        } catch (_error) {}
+      })();
+    }
+
     try {
       // Transform params to backend format
       const planModeBoolean = params.planMode === 'plan';
       const thinking = params.think ? { effect: params.think } : undefined;
+      const attachments = params.images?.map((data) => {
+        const mimeMatch = data.match(/^data:([^;]+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+        return {
+          type: 'image' as const,
+          data,
+          mimeType,
+        };
+      });
 
       const response = await request('session.send', {
         message,
@@ -636,6 +707,7 @@ const useStore = create<Store>()((set, get) => ({
         thinking,
         parentUuid: params.parentUuid,
         model,
+        attachments,
       });
 
       if (response.success) {
@@ -647,39 +719,6 @@ const useStore = create<Store>()((set, get) => ({
           error: null,
           retryInfo: null,
         });
-
-        const workspaceSessions = sessions[selectedWorkspaceId];
-        const session = workspaceSessions.find(
-          (s) => s.sessionId === sessionId,
-        );
-        const sessionMessages = get().messages[sessionId] || [];
-        const userMessages = sessionMessages.filter((m) => m.role === 'user');
-        if (userMessages.length > 1) {
-          return;
-        }
-
-        // Only summarize if there's a message to summarize
-        if (message) {
-          const summary = await request('utils.summarizeMessage', {
-            message,
-            cwd,
-          });
-          if (summary.success && summary.data.text) {
-            try {
-              const res = JSON.parse(summary.data.text.trim());
-              if (res.title) {
-                await request('session.config.setSummary', {
-                  cwd,
-                  sessionId,
-                  summary: res.title,
-                });
-                updateSession(selectedWorkspaceId, sessionId, {
-                  summary: res.title,
-                });
-              }
-            } catch (_error) {}
-          }
-        }
       } else {
         // Set failed state with error message from response
         setSessionProcessing(sessionId, {
@@ -959,22 +998,19 @@ const useStore = create<Store>()((set, get) => ({
 
   selectWorkspace: (id: string | null) => {
     set((state) => {
-      // Validate that the workspace exists and belongs to the selected repo if both are set
-      if (id !== null) {
-        const workspace = state.workspaces[id];
-        if (!workspace) return state;
-
-        if (
-          state.selectedRepoPath &&
-          workspace.repoPath !== state.selectedRepoPath
-        ) {
-          return state;
-        }
+      if (id === null) {
+        return {
+          selectedWorkspaceId: null,
+          selectedSessionId: null,
+        };
       }
 
+      const workspace = state.workspaces[id];
+      if (!workspace) return state;
+
       return {
+        selectedRepoPath: workspace.repoPath,
         selectedWorkspaceId: id,
-        // Reset child selection when parent changes
         selectedSessionId: null,
       };
     });
@@ -998,6 +1034,12 @@ const useStore = create<Store>()((set, get) => ({
     }));
   },
 
+  setSidebarCollapsed: (collapsed: boolean) => {
+    set(() => ({
+      sidebarCollapsed: collapsed,
+    }));
+  },
+
   setOpenRepoAccordions: (ids: string[]) => {
     set(() => ({
       openRepoAccordions: ids,
@@ -1011,6 +1053,10 @@ const useStore = create<Store>()((set, get) => ({
         [workspaceId]: !state.expandedSessionGroups[workspaceId],
       },
     }));
+  },
+
+  setTestComponentVisible: (visible: boolean) => {
+    set({ isTestComponentVisible: visible });
   },
 
   // Config actions
@@ -1221,6 +1267,8 @@ const useStore = create<Store>()((set, get) => ({
       },
     }));
   },
+
+  setConnectionState: (state) => set({ state }),
 }));
 
 export { useStore, defaultSessionInputState };

@@ -17,6 +17,6 @@
       "@/*": ["./src/renderer/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "include": ["src/renderer/**/*", "src/shared/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]
 }

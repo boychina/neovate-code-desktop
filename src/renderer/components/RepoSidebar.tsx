@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react';
+import { useState, useEffect, memo, type MouseEvent } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   FolderIcon,
@@ -18,7 +18,9 @@ import {
 import { formatDistanceToNowStrict } from 'date-fns';
 import type { RepoData } from '../client/types/entities';
 import { useStore } from '../store';
+import { cn } from '../lib/utils';
 import { Spinner } from './ui/spinner';
+import { ScrollArea } from './ui/scroll-area';
 
 // Helper function to format relative time using date-fns
 function formatRelativeTime(timestamp: number): string {
@@ -59,7 +61,6 @@ import {
 } from './ui/empty';
 import { Button } from './ui/button';
 import { AddRepoMenu } from './AddRepoMenu';
-import { toastManager } from './ui/toast';
 
 export const RepoSidebar = ({
   repos,
@@ -84,14 +85,13 @@ export const RepoSidebar = ({
   const sessions = useStore((state) => state.sessions);
   const selectedSessionId = useStore((state) => state.selectedSessionId);
   const deleteRepo = useStore((state) => state.deleteRepo);
-  const request = useStore((state) => state.request);
-  const addWorkspace = useStore((state) => state.addWorkspace);
   const selectWorkspace = useStore((state) => state.selectWorkspace);
   const selectSession = useStore((state) => state.selectSession);
   const createSession = useStore((state) => state.createSession);
   const sidebarCollapsed = useStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useStore((state) => state.toggleSidebar);
   const getSessionProcessing = useStore((state) => state.getSessionProcessing);
+  const messages = useStore((state) => state.messages);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
@@ -118,71 +118,12 @@ export const RepoSidebar = ({
     }
   };
 
-  const handleNewWorkspace = async (repoPath: string) => {
-    if (!openRepos.includes(repoPath)) {
-      setOpenRepoAccordions([...openRepos, repoPath]);
-    }
-
-    try {
-      // Step 1: Create workspace
-      const createResponse = await request('project.workspaces.create', {
-        cwd: repoPath,
-        skipUpdate: true,
-      });
-
-      if (!createResponse.success) {
-        toastManager.add({
-          title: 'Workspace Creation Failed',
-          description: createResponse.error || 'Failed to create workspace',
-          type: 'error',
-        });
-        return;
-      }
-
-      // Step 2: Fetch full workspace details
-      const workspaceId = createResponse.data?.workspace.name;
-      if (!workspaceId) {
-        toastManager.add({
-          title: 'Workspace Creation Failed',
-          description: 'Invalid workspace response from server',
-          type: 'error',
-        });
-        return;
-      }
-
-      const fetchResponse = await request('project.workspaces.get', {
-        cwd: repoPath,
-        workspaceId,
-      });
-
-      if (!fetchResponse.success || !fetchResponse.data) {
-        toastManager.add({
-          title: 'Failed to load workspace',
-          description: 'Workspace created but could not load details',
-          type: 'warning',
-        });
-        return;
-      }
-
-      // Step 3: Add to store and select
-      addWorkspace(fetchResponse.data);
-      selectWorkspace(workspaceId);
-    } catch (error) {
-      toastManager.add({
-        title: 'Workspace Creation Failed',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        type: 'error',
-      });
-    }
-  };
-
   return (
     <div
-      className={`flex flex-col h-full transition-all duration-200 ${sidebarCollapsed ? 'w-12' : 'w-64'}`}
+      className="h-full flex flex-col overflow-hidden"
       style={{
         backgroundColor: 'var(--bg-surface)',
         color: 'var(--text-primary)',
-        borderRight: '1px solid var(--border-subtle)',
       }}
     >
       <RepoSidebar.Header
@@ -191,7 +132,7 @@ export const RepoSidebar = ({
       />
 
       {!sidebarCollapsed && (
-        <div className="flex-1 overflow-y-auto">
+        <ScrollArea className="flex-1" orientation="vertical">
           {repos.length === 0 ? (
             <Empty>
               <EmptyMedia variant="icon">
@@ -222,16 +163,7 @@ export const RepoSidebar = ({
                       />
                       <span className="font-medium text-sm">{repo.name}</span>
                       <span
-                        className="ml-auto text-xs px-2 py-0.5 rounded"
-                        style={{
-                          backgroundColor: 'var(--bg-base)',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        {repo.workspaceIds.length}
-                      </span>
-                      <span
-                        className="p-1 rounded hover:bg-opacity-70"
+                        className="ml-auto p-1 rounded hover:bg-opacity-70"
                         onClick={(e) => handleRepoInfoClick(repo, e)}
                         style={{ color: 'var(--text-secondary)' }}
                       >
@@ -245,40 +177,10 @@ export const RepoSidebar = ({
                   </AccordionTrigger>
 
                   <AccordionPanel>
-                    <div className="ml-4 space-y-1">
-                      <button
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors w-full text-left"
-                        style={{
-                          color: 'var(--text-secondary)',
-                          backgroundColor: 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor =
-                            'var(--bg-base-hover)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }}
-                        onClick={() => handleNewWorkspace(repo.path)}
-                      >
-                        <HugeiconsIcon
-                          icon={PlusSignIcon}
-                          size={16}
-                          strokeWidth={1.5}
-                        />
-                        <span className="text-sm font-medium">
-                          New workspace
-                        </span>
-                      </button>
-
-                      {repo.workspaceIds.map((workspaceId) => {
+                    <div className="space-y-1">
+                      {repo.workspaceIds.slice(0, 1).map((workspaceId) => {
                         const workspace = workspaces[workspaceId];
                         if (!workspace) return null;
-
-                        const isWorkspaceSelected =
-                          selectedWorkspaceId === workspaceId;
-                        const changesCount =
-                          workspace.gitState.pendingChanges.length;
 
                         // Get sessions for this workspace, sorted by modified (newest first)
                         const workspaceSessions = (sessions[workspaceId] || [])
@@ -294,53 +196,8 @@ export const RepoSidebar = ({
 
                         return (
                           <div key={workspaceId}>
-                            <div
-                              className="flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors"
-                              style={{
-                                backgroundColor: isWorkspaceSelected
-                                  ? 'var(--bg-base)'
-                                  : 'transparent',
-                                color: isWorkspaceSelected
-                                  ? 'var(--text-primary)'
-                                  : 'var(--text-secondary)',
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isWorkspaceSelected) {
-                                  e.currentTarget.style.backgroundColor =
-                                    'var(--bg-base-hover)';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isWorkspaceSelected) {
-                                  e.currentTarget.style.backgroundColor =
-                                    'transparent';
-                                }
-                              }}
-                              onClick={() => onSelectWorkspace(workspaceId)}
-                            >
-                              <HugeiconsIcon
-                                icon={GitBranchIcon}
-                                size={16}
-                                strokeWidth={1.5}
-                              />
-                              <span className="flex-1 text-sm">
-                                {workspace.branch}
-                              </span>
-                              {changesCount > 0 && (
-                                <span
-                                  className="text-xs px-1.5 py-0.5 rounded"
-                                  style={{
-                                    backgroundColor: '#fef3c7',
-                                    color: '#92400e',
-                                  }}
-                                >
-                                  {changesCount}
-                                </span>
-                              )}
-                            </div>
-
                             {/* Session list */}
-                            <div className="ml-4">
+                            <div>
                               {/* Create session button */}
                               <button
                                 className="flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors w-full text-left"
@@ -362,8 +219,26 @@ export const RepoSidebar = ({
                                 }}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  const workspaceSessions =
+                                    sessions[workspaceId] || [];
+                                  const currentSession = workspaceSessions.find(
+                                    (s) => s.sessionId === selectedSessionId,
+                                  );
+                                  const currentSessionMessages =
+                                    selectedSessionId
+                                      ? messages[selectedSessionId] || []
+                                      : [];
+                                  const isCurrentSessionEmpty =
+                                    selectedWorkspaceId === workspaceId &&
+                                    currentSession &&
+                                    currentSessionMessages.length === 0;
+
                                   selectWorkspace(workspaceId);
-                                  createSession();
+                                  if (isCurrentSessionEmpty) {
+                                    selectSession(selectedSessionId!);
+                                  } else {
+                                    createSession();
+                                  }
                                 }}
                               >
                                 <HugeiconsIcon
@@ -478,10 +353,12 @@ export const RepoSidebar = ({
               ))}
             </Accordion>
           )}
-        </div>
+        </ScrollArea>
       )}
 
-      <RepoSidebar.Footer collapsed={sidebarCollapsed} />
+      <div className="mt-auto">
+        <RepoSidebar.Footer collapsed={sidebarCollapsed} />
+      </div>
 
       <Dialog
         open={dialogOpen}
@@ -606,7 +483,7 @@ function InfoRow({
   );
 }
 
-RepoSidebar.Header = function Header({
+RepoSidebar.Header = memo(function Header({
   collapsed,
   onToggle,
 }: {
@@ -615,7 +492,10 @@ RepoSidebar.Header = function Header({
 }) {
   return (
     <div
-      className={`flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-4'} py-3`}
+      className={cn(
+        'flex items-center h-12',
+        collapsed ? 'justify-end px-2' : 'justify-between px-4',
+      )}
       style={{ borderBottom: '1px solid var(--border-subtle)' }}
     >
       {!collapsed && (
@@ -635,14 +515,21 @@ RepoSidebar.Header = function Header({
       </button>
     </div>
   );
-};
+});
 
-RepoSidebar.Footer = function Footer({ collapsed }: { collapsed: boolean }) {
+RepoSidebar.Footer = memo(function Footer({
+  collapsed,
+}: {
+  collapsed: boolean;
+}) {
   const setShowSettings = useStore((state) => state.setShowSettings);
 
   return (
     <div
-      className={`py-2 flex ${collapsed ? 'flex-col items-center px-2 gap-1' : 'flex-row px-3 gap-2'}`}
+      className={cn(
+        'py-2 flex',
+        collapsed ? 'flex-col items-center px-2 gap-2' : 'flex-row px-3 gap-2',
+      )}
       style={{ borderTop: '1px solid var(--border-subtle)' }}
     >
       <AddRepoMenu>
@@ -664,4 +551,4 @@ RepoSidebar.Footer = function Footer({ collapsed }: { collapsed: boolean }) {
       </div>
     </div>
   );
-};
+});

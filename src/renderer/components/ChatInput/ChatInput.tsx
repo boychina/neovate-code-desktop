@@ -1,32 +1,33 @@
 import {
-  useMemo,
-  useState,
+  BrainIcon,
+  ChipIcon,
+  ComputerTerminal01Icon,
+  NoteEditIcon,
+  NoteIcon,
+  SentIcon,
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type React from 'react';
+import {
+  forwardRef,
+  memo,
   useCallback,
   useEffect,
-  useRef,
-  forwardRef,
   useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
 } from 'react';
-import type React from 'react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  SentIcon,
-  ChipIcon,
-  NoteEditIcon,
-  BrainIcon,
-  ComputerTerminal01Icon,
-  NoteIcon,
-} from '@hugeicons/core-free-icons';
 import { useInputHandlers } from '../../hooks/useInputHandlers';
-import { SuggestionDropdown } from './SuggestionDropdown';
-import { ImagePreview } from './ImagePreview';
-import { Textarea, Tooltip, TooltipTrigger, TooltipPopup, Button } from '../ui';
 import type { SlashCommand } from '../../hooks/useSlashCommands';
 import type {
-  HandlerMethod,
   HandlerInput,
+  HandlerMethod,
   HandlerOutput,
 } from '../../nodeBridge.types';
+import { Button, Textarea, Tooltip, TooltipPopup, TooltipTrigger } from '../ui';
+import { ImagePreview } from './ImagePreview';
+import { SuggestionDropdown } from './SuggestionDropdown';
 
 // Provider type from the API
 interface Provider {
@@ -50,7 +51,6 @@ interface ChatInputProps {
   onSubmit: (value: string, images?: string[]) => void;
   onCancel?: () => void;
   onShowForkModal?: () => void;
-  fetchPaths?: () => Promise<string[]>;
   fetchCommands?: () => Promise<SlashCommand[]>;
   placeholder?: string;
   disabled?: boolean;
@@ -66,7 +66,6 @@ interface ChatInputProps {
 }
 
 // Default implementations
-const defaultFetchPaths = async () => [];
 const defaultFetchCommands = async () => [];
 const noop = () => {};
 
@@ -75,13 +74,12 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
-  function ChatInput(
+export const ChatInput = memo(
+  forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
     {
       onSubmit,
       onCancel = noop,
       onShowForkModal = noop,
-      fetchPaths = defaultFetchPaths,
       fetchCommands = defaultFetchCommands,
       placeholder = 'Type your message...',
       disabled = false,
@@ -117,15 +115,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       thinkingEnabled,
       setThinkingEnabled,
       setThinking,
+      isSearching,
     } = useInputHandlers({
       sessionId,
       workspaceId,
       onSubmit,
       onCancel,
       onShowForkModal,
-      fetchPaths,
       fetchCommands,
       isProcessing,
+      request: request!,
+      cwd: cwd || '',
     });
 
     const { planMode, thinking, togglePlanMode, toggleThinking } = inputState;
@@ -357,7 +357,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         ...e,
         target: {
           ...e.target,
-          // @ts-ignore
+          // @ts-expect-error
           selectionStart: e.target.selectionStart,
         },
       } as React.KeyboardEvent<HTMLTextAreaElement>);
@@ -376,6 +376,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           metaKey: false,
           shiftKey: false,
           altKey: false,
+          // Required: onKeyDown checks isComposing to avoid submitting during IME composition (e.g., Chinese input)
+          nativeEvent: { isComposing: false },
         } as React.KeyboardEvent<HTMLTextAreaElement>;
         handlers.onKeyDown(submitEvent);
       }
@@ -421,6 +423,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             items={suggestions.items}
             selectedIndex={suggestions.selectedIndex}
           />
+        )}
+
+        {/* Searching indicator */}
+        {isSearching && suggestions.items.length === 0 && (
+          <div
+            className="absolute bottom-full left-0 mb-1 px-3 py-2 text-sm rounded-md"
+            style={{
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            Searching...
+          </div>
         )}
 
         {/* Main Input Container */}
@@ -692,5 +708,5 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         </div>
       </div>
     );
-  },
+  }),
 );

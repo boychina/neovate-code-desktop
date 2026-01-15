@@ -1,8 +1,15 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { is, platform } from '@electron-toolkit/utils';
 import { autoUpdater } from 'electron-updater';
-import path from 'path';
-import fs from 'fs/promises';
-import os from 'os';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { registerMainHandlers } from '../shared/lib/ipc/main';
+import { ipcMainHandlers } from './ipc';
+import { ptyManager } from './pty';
+import { neovateServerManager } from './server';
+
+// declare const _dirname: string;
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -19,9 +26,7 @@ function createWindow() {
   });
 
   // Load renderer
-  const isDev = process.argv.includes('--dev');
-
-  if (isDev) {
+  if (is.dev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
@@ -29,59 +34,60 @@ function createWindow() {
   }
 
   // Check for updates in production
-  if (!isDev) {
+  if (!is.dev) {
     autoUpdater.checkForUpdatesAndNotify();
   }
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  // Handle directory listing requests with confirmation
-  ipcMain.on('request-list-directory', (event) => {
-    const PROJECT_DIR =
-      '/Users/chencheng/Documents/Code/github.com/neovateai/neovate-code-desktop';
-    // Send confirmation request back to renderer
-    event.sender.send('confirm-list-directory', { path: PROJECT_DIR });
-  });
-
-  ipcMain.on('confirm-response', async (event, { confirmed }) => {
-    const PROJECT_DIR =
-      '/Users/chencheng/Documents/Code/github.com/neovateai/neovate-code-desktop';
-    let result: { success: boolean; files?: string[]; message?: string };
-
-    if (confirmed) {
-      try {
-        const files = await fs.readdir(PROJECT_DIR);
-        result = { success: true, files };
-      } catch (error) {
-        console.error('Error reading directory:', error);
-        result = { success: false, message: (error as Error).message };
-      }
-    } else {
-      result = { success: false, message: 'Directory listing cancelled' };
-    }
-
-    // Send result back to renderer
-    event.sender.send('directory-result', result);
-  });
-
-  // Handle directory selection dialog
-  ipcMain.handle('select-directory', async () => {
-    if (!mainWindow) return null;
-
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory'],
-      title: 'Select Repository Directory',
-    });
-
-    if (result.canceled) {
-      return null;
-    }
-
-    return result.filePaths[0] || null;
-  });
 }
+
+// Register typesafe IPC handlers
+registerMainHandlers(ipcMainHandlers);
+
+// Handle directory listing requests with confirmation
+ipcMain.on('request-list-directory', (event) => {
+  const PROJECT_DIR =
+    '/Users/chencheng/Documents/Code/github.com/neovateai/neovate-code-desktop';
+  // Send confirmation request back to renderer
+  event.sender.send('confirm-list-directory', { path: PROJECT_DIR });
+});
+
+ipcMain.on('confirm-response', async (event, { confirmed }) => {
+  const PROJECT_DIR =
+    '/Users/chencheng/Documents/Code/github.com/neovateai/neovate-code-desktop';
+  let result: { success: boolean; files?: string[]; message?: string };
+
+  if (confirmed) {
+    try {
+      const files = await fs.readdir(PROJECT_DIR);
+      result = { success: true, files };
+    } catch (error) {
+      result = { success: false, message: (error as Error).message };
+    }
+  } else {
+    result = { success: false, message: 'Directory listing cancelled' };
+  }
+
+  // Send result back to renderer
+  event.sender.send('directory-result', result);
+});
+
+// Handle directory selection dialog
+ipcMain.handle('select-directory', async () => {
+  if (!mainWindow) return null;
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select Repository Directory',
+  });
+
+  if (result.canceled) {
+    return null;
+  }
+
+  return result.filePaths[0] || null;
+});
 
 // Store persistence IPC handlers
 const STORE_DIR = path.join(os.homedir(), '.neovate', 'desktop');
@@ -110,7 +116,6 @@ ipcMain.handle('store:save', async (_event, state) => {
       message = 'Cannot create config directory';
     }
 
-    console.error('Store save error:', err);
     throw new Error(message);
   }
 });
@@ -127,22 +132,44 @@ ipcMain.handle('store:load', async () => {
       return null;
     }
 
-    // JSON parse error - log and return null for fresh start
+    // JSON parse error - return null for fresh start
     if (error instanceof SyntaxError) {
-      console.error('Failed to parse store.json, starting fresh:', error);
       return null;
     }
 
-    // Other errors - log but return null
-    console.error('Failed to load store:', error);
+    // Other errors - return null
     return null;
   }
 });
 
-app.whenReady().then(createWindow);
+ipcMain.on('app:quit', () => {
+  app.quit();
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection', reason);
+});
+
+app.whenReady().then(() => {
+  autoUpdater.on('error', (error) => {
+    console.error('Auto updater error', error);
+  });
+
+  // Set dev icon in dock when running in development mode (macOS)
+  if (is.dev && platform.isMacOS && app.dock) {
+    const devIconPath = path.join(process.cwd(), 'build/icons/icon-dev.png');
+    app.dock.setIcon(devIconPath);
+  }
+
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (!platform.isMacOS) {
     app.quit();
   }
 });
@@ -151,4 +178,10 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+// Register shutdown handler to clean up server and PTYs on app quit
+app.on('before-quit', () => {
+  ptyManager.destroyAll();
+  neovateServerManager.stop();
 });

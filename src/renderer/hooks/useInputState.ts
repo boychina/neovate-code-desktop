@@ -1,11 +1,11 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  useStore,
-  getInputMode,
   defaultSessionInputState,
+  getInputMode,
   type InputMode,
   type PlanMode,
   type ThinkingLevel,
+  useStore,
 } from '../store';
 
 export interface InputState {
@@ -13,6 +13,8 @@ export interface InputState {
   cursorPosition: number;
   mode: InputMode;
 }
+
+const DEBOUNCE_MS = 150;
 
 export function useInputState(
   sessionId: string | null,
@@ -31,16 +33,45 @@ export function useInputState(
     : defaultSessionInputState;
   const history = workspaceId ? getWorkspaceHistory(workspaceId) : [];
 
+  const [localValue, setLocalValue] = useState(sessionInput.value);
+  const [localCursorPosition, setLocalCursorPosition] = useState(
+    sessionInput.cursorPosition,
+  );
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevSessionIdRef = useRef<string | null>(sessionId);
+
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      setLocalValue(sessionInput.value);
+      setLocalCursorPosition(sessionInput.cursorPosition);
+      prevSessionIdRef.current = sessionId;
+    }
+  }, [sessionId, sessionInput.value, sessionInput.cursorPosition]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   const state: InputState = {
-    value: sessionInput.value,
-    cursorPosition: sessionInput.cursorPosition,
-    mode: getInputMode(sessionInput.value),
+    value: localValue,
+    cursorPosition: localCursorPosition,
+    mode: getInputMode(localValue),
   };
 
   const setValue = useCallback(
     (newValue: string) => {
+      setLocalValue(newValue);
       if (sessionId) {
-        setSessionInput(sessionId, { value: newValue });
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+        }
+        debounceRef.current = setTimeout(() => {
+          setSessionInput(sessionId, { value: newValue });
+        }, DEBOUNCE_MS);
       }
     },
     [sessionId, setSessionInput],
@@ -48,8 +79,14 @@ export function useInputState(
 
   const setCursorPosition = useCallback(
     (pos: number) => {
+      setLocalCursorPosition(pos);
       if (sessionId) {
-        setSessionInput(sessionId, { cursorPosition: pos });
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+        }
+        debounceRef.current = setTimeout(() => {
+          setSessionInput(sessionId, { cursorPosition: pos });
+        }, DEBOUNCE_MS);
       }
     },
     [sessionId, setSessionInput],
@@ -57,6 +94,11 @@ export function useInputState(
 
   const reset = useCallback(() => {
     if (sessionId) {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      setLocalValue('');
+      setLocalCursorPosition(0);
       resetSessionInput(sessionId);
     }
   }, [sessionId, resetSessionInput]);

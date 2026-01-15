@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from './store';
 import { Button } from './components/ui/button';
 import { TestMessages } from './TestMessages';
@@ -7,7 +7,10 @@ import { TestUIComponents } from './components/TestUIComponents';
 import { TestHugeIcons } from './components/test/TestHugeIcons';
 
 const TestComponent = () => {
-  const [isVisible, setIsVisible] = useState(false);
+  const isVisible = useStore((state) => state.isTestComponentVisible);
+  const setTestComponentVisible = useStore(
+    (state) => state.setTestComponentVisible,
+  );
   const lastPressTimeRef = useRef(0);
 
   useEffect(() => {
@@ -15,7 +18,7 @@ const TestComponent = () => {
       if (e.ctrlKey && e.key.toLowerCase() === 'l') {
         const now = Date.now();
         if (now - lastPressTimeRef.current < 300) {
-          setIsVisible((prev) => !prev);
+          setTestComponentVisible(!isVisible);
           lastPressTimeRef.current = 0;
         } else {
           lastPressTimeRef.current = now;
@@ -25,7 +28,7 @@ const TestComponent = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isVisible, setTestComponentVisible]);
 
   const {
     selectedRepoPath,

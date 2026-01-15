@@ -18,6 +18,7 @@ import vscodeIcon from '../assets/icons/vscode.png';
 import warpIcon from '../assets/icons/warp.png';
 import windsurfIcon from '../assets/icons/windsurf.png';
 import zedIcon from '../assets/icons/zed.png';
+import antigravityIcon from '../assets/icons/antigravity.png';
 
 /**
  * User-friendly display names for apps
@@ -47,6 +48,7 @@ const APP_ICON_SRC: Partial<Record<App, string>> = {
   terminal: terminalIcon,
   finder: finderIcon,
   sourcetree: sourcetreeIcon,
+  antigravity: antigravityIcon,
 };
 
 interface OpenAppButtonProps {

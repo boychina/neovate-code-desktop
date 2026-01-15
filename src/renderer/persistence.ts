@@ -1,15 +1,5 @@
 import type { StoreApi } from 'zustand';
-
-// Declare electron API on window object
-declare global {
-  interface Window {
-    // @ts-ignore
-    electron: {
-      saveStore: (state: any) => Promise<{ success: boolean }>;
-      loadStore: () => Promise<any>;
-    };
-  }
-}
+import { toastManager } from './components/ui/toast';
 
 // Define the persistable state shape
 interface PersistedState {
@@ -87,9 +77,11 @@ export function setupPersistence(store: StoreApi<any>): void {
       await window.electron.saveStore(persistableState);
     } catch (error) {
       console.error('Failed to save store:', error);
-      window.alert(
-        `Failed to save application state: ${(error as Error).message}`,
-      );
+      toastManager.add({
+        type: 'error',
+        title: 'Failed to save application state',
+        description: (error as Error).message,
+      });
     }
   }, 500);
 
@@ -175,7 +167,7 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
         selectedRepoPath: validatedRepoPath,
         selectedWorkspaceId: validatedWorkspaceId,
         selectedSessionId: validatedSessionId,
-        state: 'disconnected',
+        state: 'idle',
         transport: null,
         messageBus: null,
       },

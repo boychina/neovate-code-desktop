@@ -1,15 +1,23 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useStore } from './store';
-import { MainLayout } from './components';
 import { useStoreConnection } from './hooks';
-import { Spinner } from './components/ui';
+import { RepoSidebar } from './components/RepoSidebar';
+import { WorkspacePanel } from './components/WorkspacePanel';
+// import { WorkspaceChanges } from './components/WorkspaceChanges';
+import { Terminal } from './components/Terminal';
+import TestComponent from './TestComponent';
 import { SettingsPage } from './components/settings';
+import { ServerErrorDialog } from './components/server-error-dialog';
+import {
+  AppLayout,
+  AppLayoutSidebar,
+  AppLayoutPrimaryPanel,
+  AppLayoutSecondaryPanel,
+} from './components/layout';
 
 function App() {
-  // Establish WebSocket connection on mount
-  const connectionState = useStoreConnection();
+  const { connectionState, serverError, retry, exit } = useStoreConnection();
 
-  // Get state and actions from the store
   const {
     repos,
     workspaces,
@@ -19,7 +27,7 @@ function App() {
     selectWorkspace,
     showSettings,
     getGlobalConfigValue,
-    globalConfig,
+    initialized,
   } = useStore();
 
   // Get theme from config (default to 'system')
@@ -80,55 +88,127 @@ function App() {
       console.error('Theme setup failed:', error);
       applyTheme(false); // Safe fallback to light theme
     }
-  }, [theme, globalConfig]);
+  }, [theme]);
+
+  const [visitedRepoPaths, setVisitedRepoPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (selectedRepoPath && !visitedRepoPaths.has(selectedRepoPath)) {
+      setVisitedRepoPaths((prev) => new Set(prev).add(selectedRepoPath));
+    }
+  }, [selectedRepoPath]);
+
+  const visitedRepoPathsArray = useMemo(
+    () => Array.from(visitedRepoPaths),
+    [visitedRepoPaths],
+  );
+
+  if (connectionState === 'error') {
+    return (
+      <ServerErrorDialog
+        message={serverError?.message ?? 'An unknown error occurred'}
+        onRetry={retry}
+        onExit={exit}
+      />
+    );
+  }
+  if (
+    connectionState === 'idle' ||
+    connectionState === 'connecting' ||
+    (!initialized && connectionState === 'disconnected')
+  ) {
+    return <AppLoading />;
+  }
 
   // Get the selected workspace
   const selectedWorkspace = selectedWorkspaceId
     ? workspaces[selectedWorkspaceId]
     : null;
 
-  // Mock function to execute a command
-  const handleExecuteCommand = async (command: string) => {
-    // In a real implementation, this would send the command via WebSocket
-    console.log(`Executing command: ${command}`);
-    // For now, we'll just simulate the execution
-    return Promise.resolve();
-  };
-
-  // Show loading UI while connecting
-  if (connectionState !== 'connected') {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Spinner className="h-8 w-8" />
-          <p className="text-muted-foreground text-sm">
-            Connecting to server...
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Determine empty state type
+  const emptyStateType = !selectedWorkspace
+    ? Object.keys(repos).length === 0
+      ? 'no-repos'
+      : 'no-workspace'
+    : null;
 
   // Show settings page if enabled
   if (showSettings) {
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-dvh flex flex-col">
         <SettingsPage />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <MainLayout
-        repos={Object.values(repos)}
-        selectedRepoPath={selectedRepoPath}
-        selectedWorkspaceId={selectedWorkspaceId}
-        selectedWorkspace={selectedWorkspace}
-        onSelectRepo={selectRepo}
-        onSelectWorkspace={selectWorkspace}
-        onExecuteCommand={handleExecuteCommand}
-      />
+    <div
+      className="flex flex-col h-dvh"
+      style={{ backgroundColor: 'var(--bg-primary)' }}
+    >
+      <AppLayout>
+        {/* Sidebar */}
+        <AppLayoutSidebar>
+          <RepoSidebar
+            repos={Object.values(repos)}
+            selectedRepoPath={selectedRepoPath}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelectRepo={selectRepo}
+            onSelectWorkspace={selectWorkspace}
+          />
+        </AppLayoutSidebar>
+
+        {/* Main Content */}
+        <AppLayoutPrimaryPanel>
+          <WorkspacePanel
+            workspace={selectedWorkspace}
+            emptyStateType={emptyStateType}
+          />
+        </AppLayoutPrimaryPanel>
+
+        {/* Right Panel */}
+        <AppLayoutSecondaryPanel>
+          <div className="h-full flex flex-col">
+            {/* <WorkspaceChanges workspace={selectedWorkspace} /> */}
+            {visitedRepoPathsArray.map((repoPath) => (
+              <Terminal
+                key={repoPath}
+                cwd={repoPath}
+                hidden={repoPath !== selectedRepoPath}
+              />
+            ))}
+          </div>
+        </AppLayoutSecondaryPanel>
+      </AppLayout>
+
+      <TestComponent />
+    </div>
+  );
+}
+
+function AppLoading() {
+  const [text, setText] = useState('');
+  const fullText = 'Neovate';
+
+  useEffect(() => {
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index < fullText.length) {
+        setText(fullText.slice(0, index + 1));
+        index++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 150);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex h-screen w-screen flex-col items-center justify-center bg-white text-neutral-900">
+      <div className="text-6xl font-light">{text}</div>
     </div>
   );
 }

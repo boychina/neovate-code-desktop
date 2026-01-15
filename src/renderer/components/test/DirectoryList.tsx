@@ -1,24 +1,5 @@
 import React, { useState } from 'react';
 
-declare global {
-  interface Window {
-    electron?: {
-      requestListDirectory: () => void;
-      onConfirmRequest: (callback: (data: { path: string }) => void) => void;
-      sendConfirmResponse: (confirmed: boolean) => void;
-      onDirectoryResult: (
-        callback: (data: {
-          success: boolean;
-          files?: string[];
-          message?: string;
-        }) => void,
-      ) => void;
-      removeConfirmRequestListener: () => void;
-      removeDirectoryResultListener: () => void;
-    };
-  }
-}
-
 export const DirectoryList = () => {
   const [files, setFiles] = useState<string[]>([]);
   const [message, setMessage] = useState<string>('');
