@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toastManager } from '../components/ui/toast';
+import { DOUBLE_PRESS_TIMEOUT_MS, LARGE_PASTE_THRESHOLD } from '../constants';
+import { logger } from '../lib/logger';
 import type {
   HandlerInput,
   HandlerMethod,
   HandlerOutput,
 } from '../nodeBridge.types';
+import type { SendMessageWith } from '../store/slices/desktopSettings';
 import { useDoublePress } from './useDoublePress';
 import { useFileSuggestion } from './useFileSuggestion';
 import { useImagePasteManager } from './useImagePasteManager';
 import { useInputState } from './useInputState';
 import { usePasteManager } from './usePasteManager';
 import { type SlashCommand, useSlashCommands } from './useSlashCommands';
-
-const LARGE_PASTE_THRESHOLD = 800;
 
 interface UseInputHandlersProps {
   sessionId: string | null;
@@ -22,6 +23,7 @@ interface UseInputHandlersProps {
   onShowForkModal: () => void;
   fetchCommands: () => Promise<SlashCommand[]>;
   isProcessing?: boolean;
+  sendMessageWith: SendMessageWith;
   request: <K extends HandlerMethod>(
     method: K,
     params: HandlerInput<K>,
@@ -37,6 +39,7 @@ export function useInputHandlers({
   onShowForkModal,
   fetchCommands,
   isProcessing,
+  sendMessageWith,
   request,
   cwd,
 }: UseInputHandlersProps) {
@@ -66,6 +69,7 @@ export function useInputHandlers({
     toggleThinking,
     setThinkingEnabled,
     setThinking,
+    setThinkingVariants,
     pastedTextMap,
     pastedImageMap,
     setPastedTextMap,
@@ -83,7 +87,7 @@ export function useInputHandlers({
     cwd,
   });
 
-  const slashCommands = useSlashCommands({ value, fetchCommands });
+  const slashCommands = useSlashCommands({ value, sessionId, fetchCommands });
   const pasteManager = usePasteManager(pastedTextMap, setPastedTextMap);
   const imageManager = useImagePasteManager(
     sessionId,
@@ -95,8 +99,25 @@ export function useInputHandlers({
     fileSuggestion.matchedPaths.length > 0 ||
     slashCommands.suggestions.length > 0;
 
+  const handleSuggestionHover = useCallback(
+    (index: number) => {
+      if (slashCommands.suggestions.length > 0) {
+        slashCommands.setSelectedIndex(index);
+      } else if (fileSuggestion.matchedPaths.length > 0) {
+        fileSuggestion.setSelectedIndex(index);
+      }
+    },
+    [slashCommands, fileSuggestion],
+  );
+
   const handleDoubleEscape = useDoublePress(
-    onShowForkModal,
+    () => {
+      logger.debug(
+        '[HOOK]',
+        'onShowForkModal callback triggered in useInputHandlers',
+      );
+      onShowForkModal();
+    },
     () => {
       const currentMode = modeRef.current;
       const currentValue = valueRef.current;
@@ -109,26 +130,53 @@ export function useInputHandlers({
         onCancel();
       }
     },
-    1000,
+    DOUBLE_PRESS_TIMEOUT_MS,
+  );
+
+  const applyFileSuggestionAtIndex = useCallback(
+    (index: number) => {
+      const path = fileSuggestion.matchedPaths[index];
+      if (!path) return;
+      const selected = path.includes(' ') ? `"${path}"` : path;
+
+      const currentValue = valueRef.current;
+      const prefix = fileSuggestion.triggerType === 'at' ? '@' : '';
+      const before = currentValue.substring(0, fileSuggestion.startIndex);
+      const after = currentValue
+        .substring(fileSuggestion.startIndex + fileSuggestion.fullMatch.length)
+        .trim();
+      const newValue = `${before}${prefix}${selected} ${after}`.trim();
+
+      inputState.setValue(newValue);
+      inputState.setCursorPosition(newValue.length);
+      setForceTabTrigger(false);
+      fileSuggestion.reset();
+    },
+    [fileSuggestion, inputState],
   );
 
   const applyFileSuggestion = useCallback(() => {
-    const selected = fileSuggestion.getSelected();
-    if (!selected) return;
+    applyFileSuggestionAtIndex(fileSuggestion.selectedIndex);
+  }, [applyFileSuggestionAtIndex, fileSuggestion.selectedIndex]);
 
-    const currentValue = valueRef.current;
-    const prefix = fileSuggestion.triggerType === 'at' ? '@' : '';
-    const before = currentValue.substring(0, fileSuggestion.startIndex);
-    const after = currentValue
-      .substring(fileSuggestion.startIndex + fileSuggestion.fullMatch.length)
-      .trim();
-    const newValue = `${before}${prefix}${selected} ${after}`.trim();
-
-    inputState.setValue(newValue);
-    inputState.setCursorPosition(newValue.length);
-    setForceTabTrigger(false);
-    fileSuggestion.reset();
-  }, [fileSuggestion, inputState]);
+  const handleSuggestionSelect = useCallback(
+    (index: number) => {
+      if (slashCommands.suggestions.length > 0) {
+        const cmd = slashCommands.suggestions[index];
+        if (!cmd) return;
+        const currentValue = valueRef.current;
+        const args = currentValue.includes(' ')
+          ? currentValue.split(' ').slice(1).join(' ')
+          : '';
+        const completed = `/${cmd.name} ${args}`.trim() + ' ';
+        inputState.setValue(completed);
+        inputState.setCursorPosition(completed.length);
+      } else if (fileSuggestion.matchedPaths.length > 0) {
+        applyFileSuggestionAtIndex(index);
+      }
+    },
+    [slashCommands, fileSuggestion, applyFileSuggestionAtIndex, inputState],
+  );
 
   const handleSubmit = useCallback(() => {
     if (isProcessing) {
@@ -167,11 +215,11 @@ export function useInputHandlers({
       return;
     }
 
-    if (currentMode === 'memory' || currentMode === 'bash') {
+    if (currentMode === 'memory') {
       toastManager.add({
         type: 'info',
-        title: `${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} mode`,
-        description: `${currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} mode is not implemented yet`,
+        title: 'Memory mode',
+        description: 'Memory mode is not implemented yet',
       });
       return;
     }
@@ -290,23 +338,35 @@ export function useInputHandlers({
         if (e.nativeEvent.isComposing) {
           return;
         }
-        if (e.altKey) {
+
+        // Handle sendMessageWith setting
+        if (sendMessageWith === 'enter') {
+          // Enter sends, Alt+Enter/Shift+Enter inserts newline
+          if (e.altKey) {
+            e.preventDefault();
+            const before = currentValue.slice(0, currentCursorPosition);
+            const after = currentValue.slice(currentCursorPosition);
+            const newPos = currentCursorPosition + 1;
+            inputState.setValue(`${before}\n${after}`);
+            inputState.setCursorPosition(newPos);
+            requestAnimationFrame(() => {
+              textarea.setSelectionRange(newPos, newPos);
+            });
+            return;
+          }
+          if (e.metaKey || e.shiftKey) {
+            return; // Allow default behavior (newline)
+          }
           e.preventDefault();
-          const before = currentValue.slice(0, currentCursorPosition);
-          const after = currentValue.slice(currentCursorPosition);
-          const newPos = currentCursorPosition + 1;
-          inputState.setValue(`${before}\n${after}`);
-          inputState.setCursorPosition(newPos);
-          requestAnimationFrame(() => {
-            textarea.setSelectionRange(newPos, newPos);
-          });
-          return;
+          handleSubmit();
+        } else {
+          // cmdEnter mode: Cmd+Enter (Mac) or Ctrl+Enter sends, plain Enter inserts newline
+          if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            handleSubmit();
+          }
+          // Plain Enter: allow default behavior (newline)
         }
-        if (e.metaKey || e.shiftKey) {
-          return;
-        }
-        e.preventDefault();
-        handleSubmit();
         return;
       }
 
@@ -634,11 +694,14 @@ export function useInputHandlers({
         slashCommands.suggestions.length > 0
           ? slashCommands.selectedIndex
           : fileSuggestion.selectedIndex,
+      onHover: handleSuggestionHover,
+      onSelect: handleSuggestionSelect,
     },
     imageManager,
     thinkingEnabled,
     setThinkingEnabled,
     setThinking,
+    setThinkingVariants,
     isSearching: fileSuggestion.isLoading,
   };
 }

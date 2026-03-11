@@ -1,554 +1,646 @@
-import { useState, useEffect, memo, type MouseEvent } from 'react';
-import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  Clock01Icon,
+  FilterIcon,
+  FolderAddIcon,
   FolderIcon,
-  GitBranchIcon,
+  PlusSignCircleIcon,
   PlusSignIcon,
-  DeleteIcon,
-  SettingsIcon,
-  InformationCircleIcon,
-  CalendarIcon,
-  ClockIcon,
-  DatabaseIcon,
-  CloudIcon,
-  Comment01Icon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
+  TaskEdit01Icon,
 } from '@hugeicons/core-free-icons';
-import { formatDistanceToNowStrict } from 'date-fns';
-import type { RepoData } from '../client/types/entities';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { CheckIcon, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useStore } from '../store';
-import { cn } from '../lib/utils';
-import { Spinner } from './ui/spinner';
+import { RepoDeleteDialog } from './Repo/RepoDeleteDialog';
+import { SessionItem } from './Repo/SessionItem';
+import { useRepoDelete } from './Repo/useRepoDelete';
 import { ScrollArea } from './ui/scroll-area';
-
-// Helper function to format relative time using date-fns
-function formatRelativeTime(timestamp: number): string {
-  return formatDistanceToNowStrict(timestamp, { addSuffix: false });
-}
-
-const DEFAULT_SESSION_LIMIT = 5;
+import { Button, toastManager } from './ui';
+import { Accordion, AccordionItem, AccordionPanel } from './ui/accordion';
 import {
-  Accordion,
-  AccordionItem,
-  AccordionTrigger,
-  AccordionPanel,
-} from './ui/accordion';
-import {
-  Dialog,
-  DialogPopup,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogClose,
-} from './ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogPopup,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogClose,
-} from './ui/alert-dialog';
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from './ui/menu';
+import { RepoAccordionTrigger } from './Repo/AccordionTrigger';
 import {
   Empty,
-  EmptyMedia,
-  EmptyHeader,
-  EmptyTitle,
   EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
 } from './ui/empty';
-import { Button } from './ui/button';
-import { AddRepoMenu } from './AddRepoMenu';
 
-export const RepoSidebar = ({
-  repos,
-  selectedWorkspaceId,
-  onSelectWorkspace,
-}: {
-  repos: RepoData[];
-  selectedRepoPath: string | null;
-  selectedWorkspaceId: string | null;
-  onSelectRepo: (path: string | null) => void;
-  onSelectWorkspace: (id: string | null) => void;
-}) => {
-  const openRepos = useStore((state) => state.openRepoAccordions);
-  const setOpenRepoAccordions = useStore(
-    (state) => state.setOpenRepoAccordions,
-  );
-  const expandedSessions = useStore((state) => state.expandedSessionGroups);
-  const toggleSessionGroupExpanded = useStore(
-    (state) => state.toggleSessionGroupExpanded,
-  );
-  const workspaces = useStore((state) => state.workspaces);
-  const sessions = useStore((state) => state.sessions);
-  const selectedSessionId = useStore((state) => state.selectedSessionId);
-  const deleteRepo = useStore((state) => state.deleteRepo);
-  const selectWorkspace = useStore((state) => state.selectWorkspace);
-  const selectSession = useStore((state) => state.selectSession);
-  const createSession = useStore((state) => state.createSession);
-  const sidebarCollapsed = useStore((state) => state.sidebarCollapsed);
-  const toggleSidebar = useStore((state) => state.toggleSidebar);
-  const getSessionProcessing = useStore((state) => state.getSessionProcessing);
-  const messages = useStore((state) => state.messages);
+const DEFAULT_SESSION_LIMIT = 5;
+const CHRONOLOGICAL_SESSION_LIMIT = 50;
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
-  const [selectedRepoForDialog, setSelectedRepoForDialog] =
-    useState<RepoData | null>(null);
+// ─── PinnedSessionList ──────────────────────────────────────────────
 
-  const handleRepoInfoClick = (repo: RepoData, e: MouseEvent) => {
-    e.stopPropagation();
-    setAlertDialogOpen(false); // Ensure alert is closed
-    setSelectedRepoForDialog(repo);
-    setDialogOpen(true);
-  };
+/** Encode a (workspaceId, sessionId) pair as a single string key */
+const encodePairKey = (workspaceId: string, sessionId: string) =>
+  `${workspaceId}\0${sessionId}`;
 
-  const handleDeleteRepo = () => {
-    setAlertDialogOpen(true);
-  };
-
-  const handleConfirmDelete = () => {
-    if (selectedRepoForDialog) {
-      deleteRepo(selectedRepoForDialog.path);
-      setAlertDialogOpen(false);
-      setDialogOpen(false);
-      setSelectedRepoForDialog(null);
-    }
-  };
-
-  return (
-    <div
-      className="h-full flex flex-col overflow-hidden"
-      style={{
-        backgroundColor: 'var(--bg-surface)',
-        color: 'var(--text-primary)',
-      }}
-    >
-      <RepoSidebar.Header
-        collapsed={sidebarCollapsed}
-        onToggle={toggleSidebar}
-      />
-
-      {!sidebarCollapsed && (
-        <ScrollArea className="flex-1" orientation="vertical">
-          {repos.length === 0 ? (
-            <Empty>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon
-                  icon={FolderIcon}
-                  size={48}
-                  strokeWidth={1.5}
-                  style={{ color: 'var(--text-tertiary)' }}
-                />
-              </EmptyMedia>
-              <EmptyHeader>
-                <EmptyTitle>No repositories</EmptyTitle>
-                <EmptyDescription>
-                  Click the + icon below to add your first repository
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <Accordion value={openRepos} onValueChange={setOpenRepoAccordions}>
-              {repos.map((repo) => (
-                <AccordionItem key={repo.path} value={repo.path}>
-                  <AccordionTrigger className="px-3 py-2 hover:bg-opacity-50">
-                    <div className="flex items-center gap-2 flex-1">
-                      <HugeiconsIcon
-                        icon={FolderIcon}
-                        size={18}
-                        strokeWidth={1.5}
-                      />
-                      <span className="font-medium text-sm">{repo.name}</span>
-                      <span
-                        className="ml-auto p-1 rounded hover:bg-opacity-70"
-                        onClick={(e) => handleRepoInfoClick(repo, e)}
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        <HugeiconsIcon
-                          icon={InformationCircleIcon}
-                          size={16}
-                          strokeWidth={1.5}
-                        />
-                      </span>
-                    </div>
-                  </AccordionTrigger>
-
-                  <AccordionPanel>
-                    <div className="space-y-1">
-                      {repo.workspaceIds.slice(0, 1).map((workspaceId) => {
-                        const workspace = workspaces[workspaceId];
-                        if (!workspace) return null;
-
-                        // Get sessions for this workspace, sorted by modified (newest first)
-                        const workspaceSessions = (sessions[workspaceId] || [])
-                          .slice()
-                          .sort((a, b) => b.modified - a.modified);
-                        const expandKey = `${workspaceId}`;
-                        const isExpanded = expandedSessions[expandKey] ?? false;
-                        const visibleSessions = isExpanded
-                          ? workspaceSessions
-                          : workspaceSessions.slice(0, DEFAULT_SESSION_LIMIT);
-                        const hiddenCount =
-                          workspaceSessions.length - DEFAULT_SESSION_LIMIT;
-
-                        return (
-                          <div key={workspaceId}>
-                            {/* Session list */}
-                            <div>
-                              {/* Create session button */}
-                              <button
-                                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors w-full text-left"
-                                style={{
-                                  color: 'var(--text-tertiary)',
-                                  backgroundColor: 'transparent',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor =
-                                    'var(--bg-base-hover)';
-                                  e.currentTarget.style.color =
-                                    'var(--text-secondary)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor =
-                                    'transparent';
-                                  e.currentTarget.style.color =
-                                    'var(--text-tertiary)';
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const workspaceSessions =
-                                    sessions[workspaceId] || [];
-                                  const currentSession = workspaceSessions.find(
-                                    (s) => s.sessionId === selectedSessionId,
-                                  );
-                                  const currentSessionMessages =
-                                    selectedSessionId
-                                      ? messages[selectedSessionId] || []
-                                      : [];
-                                  const isCurrentSessionEmpty =
-                                    selectedWorkspaceId === workspaceId &&
-                                    currentSession &&
-                                    currentSessionMessages.length === 0;
-
-                                  selectWorkspace(workspaceId);
-                                  if (isCurrentSessionEmpty) {
-                                    selectSession(selectedSessionId!);
-                                  } else {
-                                    createSession();
-                                  }
-                                }}
-                              >
-                                <HugeiconsIcon
-                                  icon={PlusSignIcon}
-                                  size={14}
-                                  strokeWidth={1.5}
-                                />
-                                <span className="text-xs font-medium">
-                                  New session
-                                </span>
-                              </button>
-
-                              {visibleSessions.map((session) => {
-                                const isSessionSelected =
-                                  selectedSessionId === session.sessionId;
-                                const displaySummary =
-                                  session.summary && session.summary.length > 20
-                                    ? `${session.summary.slice(0, 20)}…`
-                                    : session.summary || 'New session';
-
-                                const processing = getSessionProcessing(
-                                  session.sessionId,
-                                );
-                                const isProcessing =
-                                  processing.status === 'processing';
-                                const isFailed = processing.status === 'failed';
-                                const textColor = isFailed
-                                  ? '#ef4444'
-                                  : isSessionSelected
-                                    ? 'var(--text-primary)'
-                                    : 'var(--text-tertiary)';
-
-                                return (
-                                  <div
-                                    key={session.sessionId}
-                                    className="flex items-center gap-2 px-3 py-1.5 cursor-pointer rounded transition-colors"
-                                    style={{
-                                      backgroundColor: isSessionSelected
-                                        ? 'var(--bg-base)'
-                                        : 'transparent',
-                                      color: textColor,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (!isSessionSelected) {
-                                        e.currentTarget.style.backgroundColor =
-                                          'var(--bg-base-hover)';
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      if (!isSessionSelected) {
-                                        e.currentTarget.style.backgroundColor =
-                                          'transparent';
-                                      }
-                                    }}
-                                    onClick={() => {
-                                      selectWorkspace(workspaceId);
-                                      selectSession(session.sessionId);
-                                    }}
-                                  >
-                                    {isProcessing ? (
-                                      <Spinner className="size-3.5" />
-                                    ) : (
-                                      <HugeiconsIcon
-                                        icon={Comment01Icon}
-                                        size={14}
-                                        strokeWidth={1.5}
-                                      />
-                                    )}
-                                    <span className="flex-1 text-xs truncate">
-                                      {displaySummary}
-                                    </span>
-                                    <span
-                                      className="text-xs"
-                                      style={{ color: 'var(--text-tertiary)' }}
-                                    >
-                                      {formatRelativeTime(session.modified)}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-
-                              {/* Show more/less toggle */}
-                              {hiddenCount > 0 && (
-                                <button
-                                  className="px-3 py-1 text-xs cursor-pointer transition-colors"
-                                  style={{ color: 'var(--text-tertiary)' }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.color =
-                                      'var(--text-secondary)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.color =
-                                      'var(--text-tertiary)';
-                                  }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleSessionGroupExpanded(expandKey);
-                                  }}
-                                >
-                                  {isExpanded
-                                    ? 'Show less'
-                                    : `Show ${hiddenCount} more`}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </AccordionPanel>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          )}
-        </ScrollArea>
-      )}
-
-      <div className="mt-auto">
-        <RepoSidebar.Footer collapsed={sidebarCollapsed} />
-      </div>
-
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) setAlertDialogOpen(false);
-        }}
-      >
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>Repository Information</DialogTitle>
-            <DialogDescription>{selectedRepoForDialog?.name}</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 text-sm">
-            <InfoRow
-              icon={FolderIcon}
-              label="Path"
-              value={selectedRepoForDialog?.path || ''}
-            />
-            <InfoRow
-              icon={GitBranchIcon}
-              label="Workspaces"
-              value={`${
-                selectedRepoForDialog?.workspaceIds.length || 0
-              } worktrees`}
-            />
-            <InfoRow
-              icon={CloudIcon}
-              label="Remote URL"
-              value="https://github.com/user/repo.git"
-            />
-            <InfoRow icon={ClockIcon} label="Last Commit" value="2 hours ago" />
-            <InfoRow
-              icon={DatabaseIcon}
-              label="Repository Size"
-              value="12.5 MB"
-            />
-            <InfoRow
-              icon={CalendarIcon}
-              label="Created"
-              value={new Date().toLocaleDateString()}
-            />
-          </div>
-
-          <DialogFooter>
-            <DialogClose>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteRepo}
-              className="gap-2"
-            >
-              <HugeiconsIcon icon={DeleteIcon} size={16} strokeWidth={1.5} />
-              Delete Repository
-            </Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
-
-      <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
-        <AlertDialogPopup>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Repository?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {selectedRepoForDialog &&
-                `This will permanently delete '${selectedRepoForDialog.name}' and its ${selectedRepoForDialog.workspaceIds.length} workspace(s). This action cannot be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogClose>
-              <Button variant="outline">Cancel</Button>
-            </AlertDialogClose>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmDelete}
-              className="gap-2"
-            >
-              <HugeiconsIcon icon={DeleteIcon} size={16} strokeWidth={1.5} />
-              Delete
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogPopup>
-      </AlertDialog>
-    </div>
-  );
+/** Decode a pair key back into { workspaceId, sessionId } */
+const decodePairKey = (key: string) => {
+  const idx = key.indexOf('\0');
+  return { workspaceId: key.slice(0, idx), sessionId: key.slice(idx + 1) };
 };
 
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: any;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <HugeiconsIcon
-        icon={icon}
-        size={16}
-        strokeWidth={1.5}
-        style={{ color: 'var(--text-secondary)', marginTop: '2px' }}
-      />
-      <div className="flex-1 min-w-0">
-        <div
-          className="text-xs font-medium mb-0.5"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {label}
-        </div>
-        <div
-          className="text-sm break-all"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          {value}
-        </div>
-      </div>
-    </div>
-  );
-}
+const PinnedSessionList = memo(function PinnedSessionList() {
+  const sidebarSortBy = useStore((state) => state.sidebarSortBy);
 
-RepoSidebar.Header = memo(function Header({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
+  // Derive string[] keys — useShallow compares strings by value (primitives),
+  // so this avoids the infinite-loop that new objects cause.
+  const pinnedKeys = useStore(
+    useShallow((state) => {
+      const keys: string[] = [];
+      for (const [workspaceId, workspaceSessions] of Object.entries(
+        state.sessions,
+      )) {
+        if (!state.workspaces[workspaceId]) continue;
+        for (const session of workspaceSessions) {
+          if (state.pinnedSessions.includes(session.sessionId)) {
+            keys.push(encodePairKey(workspaceId, session.sessionId));
+          }
+        }
+      }
+      return keys;
+    }),
+  );
+
+  const pinnedItems = useMemo(
+    () => pinnedKeys.map(decodePairKey),
+    [pinnedKeys],
+  );
+
+  if (pinnedItems.length === 0) {
+    return null;
+  }
+
   return (
-    <div
-      className={cn(
-        'flex items-center h-12',
-        collapsed ? 'justify-end px-2' : 'justify-between px-4',
-      )}
-      style={{ borderBottom: '1px solid var(--border-subtle)' }}
-    >
-      {!collapsed && (
-        <h2 className="text-base font-semibold flex-1">Neovate Code Desktop</h2>
-      )}
-      <button
-        className="p-1 rounded hover:bg-opacity-70 transition-colors"
-        style={{ color: 'var(--text-secondary)' }}
-        onClick={onToggle}
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
-        <HugeiconsIcon
-          icon={collapsed ? ArrowRightIcon : ArrowLeftIcon}
-          size={18}
-          strokeWidth={1.5}
+    <div className="space-y-1 px-2 pb-2">
+      {pinnedItems.map(({ sessionId, workspaceId }) => (
+        <SessionItem
+          key={sessionId}
+          sessionId={sessionId}
+          workspaceId={workspaceId}
+          isPinned
+          sortBy={sidebarSortBy}
         />
-      </button>
+      ))}
     </div>
   );
 });
 
-RepoSidebar.Footer = memo(function Footer({
-  collapsed,
-}: {
-  collapsed: boolean;
-}) {
-  const setShowSettings = useStore((state) => state.setShowSettings);
+// ─── ChronologicalSessionList ───────────────────────────────────────
+
+const ChronologicalSessionList = memo(function ChronologicalSessionList() {
+  const sidebarSortBy = useStore((state) => state.sidebarSortBy);
+
+  // Derive sorted string[] keys — useShallow compares strings by value.
+  const sortedKeys = useStore(
+    useShallow((state) => {
+      const items: { key: string; sortKey: number }[] = [];
+      for (const [workspaceId, workspaceSessions] of Object.entries(
+        state.sessions,
+      )) {
+        if (!state.workspaces[workspaceId]) continue;
+        for (const session of workspaceSessions) {
+          if (state.pinnedSessions.includes(session.sessionId)) continue;
+          items.push({
+            key: encodePairKey(workspaceId, session.sessionId),
+            sortKey:
+              state.sidebarSortBy === 'created'
+                ? session.created
+                : session.modified,
+          });
+        }
+      }
+      items.sort((a, b) => b.sortKey - a.sortKey);
+      return items.map((item) => item.key);
+    }),
+  );
+
+  const sortedItems = useMemo(
+    () => sortedKeys.map(decodePairKey),
+    [sortedKeys],
+  );
+
+  const showAllThreshold = CHRONOLOGICAL_SESSION_LIMIT;
+  const hasHidden = sortedItems.length > showAllThreshold;
+
+  // Use local state for show all toggle
+  const [showAll, setShowAll] = useState(false);
+
+  const visibleItems = showAll
+    ? sortedItems
+    : sortedItems.slice(0, showAllThreshold);
+  const hiddenCount = sortedItems.length - showAllThreshold;
 
   return (
-    <div
-      className={cn(
-        'py-2 flex',
-        collapsed ? 'flex-col items-center px-2 gap-2' : 'flex-row px-3 gap-2',
-      )}
-      style={{ borderTop: '1px solid var(--border-subtle)' }}
-    >
-      <AddRepoMenu>
-        <div
-          className="p-2 rounded hover:bg-opacity-70 transition-colors"
-          style={{ color: 'var(--text-secondary)' }}
-          title="Add repository"
+    <div className="space-y-1">
+      {visibleItems.map(({ sessionId, workspaceId }) => (
+        <SessionItem
+          key={sessionId}
+          sessionId={sessionId}
+          workspaceId={workspaceId}
+          sortBy={sidebarSortBy}
+        />
+      ))}
+      {hasHidden && hiddenCount > 0 && (
+        <button
+          className="px-3 py-1 text-sm cursor-pointer transition-colors text-muted-foreground hover:text-foreground"
+          onClick={() => setShowAll(!showAll)}
         >
-          <HugeiconsIcon icon={PlusSignIcon} size={18} strokeWidth={1.5} />
-        </div>
-      </AddRepoMenu>
-      <div
-        className="p-2 rounded hover:bg-opacity-70 transition-colors"
-        style={{ color: 'var(--text-secondary)' }}
-        onClick={() => setShowSettings(true)}
-        title="Settings"
-      >
-        <HugeiconsIcon icon={SettingsIcon} size={18} strokeWidth={1.5} />
+          {showAll ? 'Show less' : `Show ${hiddenCount} more`}
+        </button>
+      )}
+    </div>
+  );
+});
+
+// ─── RepoSessionList ────────────────────────────────────────────────
+
+interface RepoSessionListProps {
+  workspaceId: string;
+}
+
+const RepoSessionList = memo(function RepoSessionList({
+  workspaceId,
+}: RepoSessionListProps) {
+  const sidebarSortBy = useStore((state) => state.sidebarSortBy);
+  const multiProjectSupport = useStore((state) => state.multiProjectSupport);
+
+  const isExpanded = useStore(
+    (state) => state.expandedSessionGroups[workspaceId] ?? false,
+  );
+
+  const actions = useStore(
+    useShallow((state) => ({
+      selectWorkspace: state.selectWorkspace,
+      createOrSelectEmptySession: state.createOrSelectEmptySession,
+      toggleSessionGroupExpanded: state.toggleSessionGroupExpanded,
+    })),
+  );
+
+  // Derive sorted session IDs for this workspace, excluding pinned
+  const sortedSessionIds = useStore(
+    useShallow((state) => {
+      const workspaceSessions = state.sessions[workspaceId] || [];
+      return workspaceSessions
+        .filter((s) => !state.pinnedSessions.includes(s.sessionId))
+        .slice()
+        .sort((a, b) => {
+          if (state.sidebarSortBy === 'created') {
+            return b.created - a.created;
+          }
+          return b.modified - a.modified;
+        })
+        .map((s) => s.sessionId);
+    }),
+  );
+
+  const visibleIds = isExpanded
+    ? sortedSessionIds
+    : sortedSessionIds.slice(0, DEFAULT_SESSION_LIMIT);
+  const hiddenCount = sortedSessionIds.length - DEFAULT_SESSION_LIMIT;
+
+  return (
+    <div className="space-y-1">
+      <div>
+        {multiProjectSupport ? null : (
+          <Button
+            className="mb-3 mt-2 w-full"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.selectWorkspace(workspaceId);
+              actions.createOrSelectEmptySession(workspaceId);
+            }}
+          >
+            <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={1.5} />
+            <span>New Chat</span>
+          </Button>
+        )}
+
+        {visibleIds.map((sessionId) => (
+          <SessionItem
+            key={sessionId}
+            sessionId={sessionId}
+            workspaceId={workspaceId}
+            sortBy={sidebarSortBy}
+          />
+        ))}
+
+        {hiddenCount > 0 && (
+          <button
+            className="px-3 py-1 text-sm cursor-pointer transition-colors text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.toggleSessionGroupExpanded(workspaceId);
+            }}
+          >
+            {isExpanded ? 'Show less' : `Show ${hiddenCount} more`}
+          </button>
+        )}
       </div>
     </div>
   );
+});
+
+// ─── SidebarTitleBar ────────────────────────────────────────────────
+
+const SidebarTitleBar = memo(function SidebarTitleBar() {
+  const multiProjectSupport = useStore((state) => state.multiProjectSupport);
+  const sidebarOrganize = useStore((state) => state.sidebarOrganize);
+  const sidebarSortBy = useStore((state) => state.sidebarSortBy);
+
+  const actions = useStore(
+    useShallow((state) => ({
+      setSidebarOrganize: state.setSidebarOrganize,
+      setSidebarSortBy: state.setSidebarSortBy,
+      request: state.request,
+      addRepo: state.addRepo,
+      addWorkspace: state.addWorkspace,
+      selectWorkspace: state.selectWorkspace,
+    })),
+  );
+
+  if (!multiProjectSupport) {
+    return null;
+  }
+
+  const handleOpenProject = async () => {
+    let loadingToastId: string | undefined;
+
+    const closeLoadingToast = () => {
+      if (loadingToastId) {
+        toastManager.close(loadingToastId);
+        loadingToastId = undefined;
+      }
+    };
+
+    try {
+      const electron = window.electron;
+      if (!electron?.selectDirectory) {
+        console.error('Directory selection is not available');
+        return;
+      }
+      const selectedPath = await electron.selectDirectory();
+
+      if (!selectedPath) {
+        return;
+      }
+
+      // Use getState() to check repos at call time — no subscription needed
+      if (useStore.getState().repos[selectedPath]) {
+        toastManager.add({
+          title: 'Repository already exists',
+          description: `The repository at ${selectedPath} is already added.`,
+          type: 'error',
+        });
+        return;
+      }
+
+      loadingToastId = toastManager.add({
+        title: 'Adding repository',
+        description: 'Loading repository information...',
+        type: 'loading',
+      });
+
+      const response = await actions.request('project.getRepoInfo', {
+        cwd: selectedPath,
+      });
+
+      if (response.success && response.data?.repoData) {
+        const repoData = response.data.repoData;
+
+        actions.addRepo(repoData);
+
+        try {
+          const workspacesResponse = await actions.request(
+            'project.workspaces.list',
+            { cwd: selectedPath },
+          );
+
+          if (
+            workspacesResponse.success &&
+            workspacesResponse.data?.workspaces
+          ) {
+            const workspaces = workspacesResponse.data.workspaces;
+            for (const workspace of workspaces) {
+              actions.addWorkspace(workspace);
+            }
+            if (workspaces.length > 0) {
+              actions.selectWorkspace(workspaces[0].id);
+            }
+          } else if (!workspacesResponse.success) {
+            console.warn(
+              'Failed to fetch workspaces:',
+              workspacesResponse.error || 'Unknown error',
+            );
+          }
+        } catch (workspaceError) {
+          console.warn('Error fetching workspaces:', workspaceError);
+        }
+
+        closeLoadingToast();
+
+        toastManager.add({
+          title: 'Repository added',
+          description: `Successfully added ${repoData.name}`,
+          type: 'success',
+        });
+      } else {
+        closeLoadingToast();
+
+        const errorMessage = response.error || 'Invalid response from server';
+        toastManager.add({
+          title: 'Failed to add repository',
+          description: errorMessage,
+          type: 'error',
+        });
+      }
+    } catch (error) {
+      closeLoadingToast();
+
+      const errorMessage =
+        error instanceof Error ? error.message : 'Could not connect to server';
+
+      toastManager.add({
+        title: 'Failed to add repository',
+        description: errorMessage,
+        type: 'error',
+      });
+    }
+  };
+
+  const handleOrganizeChange = (value: string) => {
+    actions.setSidebarOrganize(value as 'byProject' | 'chronological');
+  };
+
+  return (
+    <div className="flex items-center justify-between px-3 py-2">
+      <span className="text-sm font-medium text-foreground">Sessions</span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={handleOpenProject}
+          title="Add project"
+        >
+          <HugeiconsIcon icon={FolderAddIcon} size={16} strokeWidth={1.5} />
+        </Button>
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                title="Filter"
+              >
+                <HugeiconsIcon icon={FilterIcon} size={16} strokeWidth={1.5} />
+              </Button>
+            }
+          />
+          <MenuPopup side="bottom" align="end" className="text-xs">
+            <MenuGroup>
+              <MenuGroupLabel>Organize</MenuGroupLabel>
+              <MenuItem onClick={() => handleOrganizeChange('byProject')}>
+                <HugeiconsIcon icon={FolderIcon} size={14} strokeWidth={1.5} />
+                <span className="flex-1">By project</span>
+                {sidebarOrganize === 'byProject' && <CheckIcon size={12} />}
+              </MenuItem>
+              {multiProjectSupport && (
+                <MenuItem onClick={() => handleOrganizeChange('chronological')}>
+                  <HugeiconsIcon
+                    icon={Clock01Icon}
+                    size={14}
+                    strokeWidth={1.5}
+                  />
+                  <span className="flex-1">Chronological list</span>
+                  {sidebarOrganize === 'chronological' && (
+                    <CheckIcon size={12} />
+                  )}
+                </MenuItem>
+              )}
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Sort by</MenuGroupLabel>
+              <MenuItem onClick={() => actions.setSidebarSortBy('created')}>
+                <HugeiconsIcon
+                  icon={PlusSignCircleIcon}
+                  size={14}
+                  strokeWidth={1.5}
+                />
+                <span className="flex-1">Created</span>
+                {sidebarSortBy === 'created' && <CheckIcon size={14} />}
+              </MenuItem>
+              <MenuItem onClick={() => actions.setSidebarSortBy('updated')}>
+                <HugeiconsIcon
+                  icon={TaskEdit01Icon}
+                  size={12}
+                  strokeWidth={1.5}
+                />
+                <span className="flex-1">Updated</span>
+                {sidebarSortBy === 'updated' && <CheckIcon size={12} />}
+              </MenuItem>
+            </MenuGroup>
+          </MenuPopup>
+        </Menu>
+      </div>
+    </div>
+  );
+});
+
+// ─── RepoSidebar ────────────────────────────────────────────────────
+
+const SidebarHeader = memo(function Header() {
+  return null;
+});
+
+const SidebarFooter = memo(function Footer() {
+  return null;
+});
+
+const RepoSidebarInner = memo(function RepoSidebar() {
+  const openRepos = useStore((state) => state.openRepoAccordions);
+  const setOpenRepoAccordions = useStore(
+    (state) => state.setOpenRepoAccordions,
+  );
+  const multiProjectSupport = useStore((state) => state.multiProjectSupport);
+  const sidebarOrganize = useStore((state) => state.sidebarOrganize);
+  const selectedRepoPath = useStore((state) => state.selectedRepoPath);
+  const developerMode = useStore((state) => state.developerMode);
+
+  const actions = useStore(
+    useShallow((state) => ({
+      selectWorkspace: state.selectWorkspace,
+      createOrSelectEmptySession: state.createOrSelectEmptySession,
+    })),
+  );
+
+  const {
+    deleteDialogOpen: repoDeleteDialogOpen,
+    repoToDelete: repoToDeleteInfo,
+    handleDeleteRepoClick,
+    handleConfirmDelete: handleRepoConfirmDelete,
+    handleCancelDelete: handleRepoCancelDelete,
+  } = useRepoDelete();
+
+  // Derive the display repo list — returns actual store objects (stable refs)
+  // so useShallow can compare elements by reference.
+  const displayRepos = useStore(
+    useShallow((state) => {
+      const repoList = Object.values(state.repos);
+      return state.multiProjectSupport
+        ? repoList
+        : repoList.filter((repo) => repo.path === state.selectedRepoPath);
+    }),
+  );
+
+  const repoCount = useStore((state) => Object.keys(state.repos).length);
+
+  return (
+    <div className="h-full flex flex-col">
+      <PinnedSessionList />
+      <SidebarTitleBar />
+
+      {developerMode && (
+        <div className="mb-2 mx-2 px-3 py-2 rounded-md text-xs font-mono bg-muted border border-border text-muted-foreground">
+          <div>
+            multiProjectSupport: {multiProjectSupport ? 'true' : 'false'}
+          </div>
+          <div>repoList count: {repoCount}</div>
+          <div>filtered repos: {displayRepos.length}</div>
+        </div>
+      )}
+
+      <ScrollArea
+        className="flex-1 p-2 pt-0 **:data-[slot=scroll-area-scrollbar]:hidden"
+        scrollFade
+      >
+        {repoCount === 0 ? (
+          <Empty>
+            <EmptyMedia variant="icon">
+              <HugeiconsIcon
+                icon={FolderIcon}
+                size={48}
+                strokeWidth={1.5}
+                className="text-muted-foreground"
+              />
+            </EmptyMedia>
+            <EmptyHeader>
+              <EmptyTitle>No repositories</EmptyTitle>
+              <EmptyDescription>
+                Click the + icon below to add your first repository
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : sidebarOrganize === 'chronological' && multiProjectSupport ? (
+          <ChronologicalSessionList />
+        ) : multiProjectSupport ? (
+          <Accordion
+            value={openRepos}
+            onValueChange={setOpenRepoAccordions}
+            multiple
+          >
+            {displayRepos.map((repo) => (
+              <AccordionItem key={repo.path} value={repo.path} className="mb-1">
+                <RepoAccordionTrigger className="flex items-center gap-2 px-3 py-1.5 mb-1 cursor-pointer rounded transition-colors text-muted-foreground hover:bg-accent hover:text-foreground group w-full max-w-full">
+                  <div className="flex items-center gap-2 w-full min-w-0">
+                    <HugeiconsIcon
+                      icon={FolderIcon}
+                      size={18}
+                      strokeWidth={1.5}
+                      className="flex-shrink-0 group-hover:hidden"
+                    />
+                    {openRepos.includes(repo.path) ? (
+                      <ChevronDown
+                        size={18}
+                        strokeWidth={1.5}
+                        className="flex-shrink-0 hidden group-hover:block"
+                      />
+                    ) : (
+                      <ChevronRight
+                        size={18}
+                        strokeWidth={1.5}
+                        className="flex-shrink-0 hidden group-hover:block"
+                      />
+                    )}
+                    <div className="font-medium text-sm truncate flex-1">
+                      {repo.name}
+                    </div>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-opacity"
+                      onClick={(e) =>
+                        handleDeleteRepoClick(e, repo.path, repo.name)
+                      }
+                    >
+                      <Trash2 size={14} strokeWidth={1.5} />
+                    </button>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-accent transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const workspaceId = repo.workspaceIds[0];
+                        if (workspaceId) {
+                          actions.selectWorkspace(workspaceId);
+                          actions.createOrSelectEmptySession(workspaceId);
+                        }
+                      }}
+                    >
+                      <HugeiconsIcon
+                        icon={PlusSignIcon}
+                        size={14}
+                        strokeWidth={1.5}
+                      />
+                    </button>
+                  </div>
+                </RepoAccordionTrigger>
+                <AccordionPanel>
+                  {repo.workspaceIds[0] && (
+                    <RepoSessionList workspaceId={repo.workspaceIds[0]} />
+                  )}
+                </AccordionPanel>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        ) : (
+          displayRepos.map((repo) =>
+            repo.workspaceIds[0] ? (
+              <RepoSessionList
+                key={repo.path}
+                workspaceId={repo.workspaceIds[0]}
+              />
+            ) : null,
+          )
+        )}
+      </ScrollArea>
+
+      <div className="mt-auto">
+        <SidebarFooter />
+      </div>
+
+      <RepoDeleteDialog
+        open={repoDeleteDialogOpen}
+        onOpenChange={handleRepoCancelDelete}
+        repo={repoToDeleteInfo}
+        onConfirm={handleRepoConfirmDelete}
+      />
+    </div>
+  );
+});
+
+export const RepoSidebar = Object.assign(RepoSidebarInner, {
+  Header: SidebarHeader,
+  Footer: SidebarFooter,
 });

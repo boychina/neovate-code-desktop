@@ -1,0 +1,249 @@
+import { EventEmitter } from 'events';
+import net from 'net';
+import type { WebContents } from 'electron';
+import { randomUUID } from 'node:crypto';
+import { getRendererCaller } from '../../shared/lib/ipc/main';
+import type { IPCRendererHandlers } from '../ipc';
+
+interface IBridgeRequestParams {
+  operationType: string;
+  cwd: string;
+  params: Record<string, any>;
+}
+
+export const BRIDGE_SERVER_PORT = 45000;
+
+class ExtensionBridgeServer extends EventEmitter {
+  private server: net.Server | null = null;
+  private clients = new Map<string, net.Socket>();
+  private handlers = new Map<
+    string,
+    (
+      params: IBridgeRequestParams['params'],
+      cwd: string,
+      webContents?: WebContents,
+    ) => Promise<any>
+  >();
+  private webContents?: WebContents;
+  private pendingRequests = new Map<
+    string,
+    {
+      resolve: (value: any) => void;
+      reject: (error: any) => void;
+      timeout: NodeJS.Timeout;
+    }
+  >();
+
+  connect2renderer(webContents: WebContents) {
+    this.webContents = webContents;
+  }
+
+  start(port: number = BRIDGE_SERVER_PORT) {
+    console.log(`[ExtensionBridgeServer] Starting on port ${port}...`);
+    return new Promise((resolve, reject) => {
+      // If already running on this port, reuse it
+      if (this.server && this.server.listening) {
+        console.log(`[ExtensionBridgeServer] Already running on port ${port}`);
+        resolve('');
+        return;
+      }
+
+      this.server = net.createServer((socket) => {
+        let currentCwd: string | null = null;
+
+        socket.on('data', async (raw) => {
+          try {
+            const data = JSON.parse(raw.toString());
+            console.log('ExtensionBridgeServer Received', data);
+            const { operationType, params, cwd, result, requestId } =
+              data || {};
+
+            // 处理响应（包含requestId的是响应消息）
+            if (requestId && this.pendingRequests.has(requestId)) {
+              const pending = this.pendingRequests.get(requestId);
+              if (pending) {
+                clearTimeout(pending.timeout);
+                this.pendingRequests.delete(requestId);
+                pending.resolve(
+                  result as { success: boolean; data: Record<string, any> },
+                );
+                return;
+              }
+            }
+
+            // 处理请求（包含operationType的是请求消息）
+            if (!operationType || !cwd) {
+              return;
+            }
+
+            // 首次连接或cwd变化时更新映射
+            if (currentCwd !== cwd) {
+              if (currentCwd) {
+                this.clients.delete(currentCwd);
+              }
+              currentCwd = cwd;
+              this.clients.set(cwd, socket);
+            }
+
+            const handler = this.handlers.get(operationType);
+            if (handler) {
+              try {
+                const result = await handler(params, cwd, this.webContents);
+                const response = JSON.stringify({
+                  ...result,
+                  requestId: data.requestId,
+                });
+                socket.write(Buffer.from(response));
+              } catch (error) {
+                const response = JSON.stringify({
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                  requestId: data.requestId,
+                });
+                socket.write(Buffer.from(response));
+              }
+            } else {
+              const response = JSON.stringify({
+                success: false,
+                error: `No handler registered for operation: ${operationType}`,
+                requestId: data.requestId,
+              });
+              socket.write(Buffer.from(response));
+            }
+          } catch (error) {
+            const response = JSON.stringify({
+              success: false,
+              error: 'Invalid JSON format',
+            });
+            socket.write(Buffer.from(response));
+          }
+        });
+
+        socket.on('close', () => {
+          if (currentCwd) {
+            this.clients.delete(currentCwd);
+          }
+          // 清理该cwd相关的所有pending请求
+          for (const [requestId, pending] of this.pendingRequests.entries()) {
+            pending.reject(new Error('Connection closed'));
+            clearTimeout(pending.timeout);
+            this.pendingRequests.delete(requestId);
+          }
+        });
+      });
+
+      // Handle server errors (e.g., EADDRINUSE)
+      this.server.on('error', (error: NodeJS.ErrnoException) => {
+        console.error(`[ExtensionBridgeServer] Server error:`, error);
+        if (error.code === 'EADDRINUSE') {
+          reject(
+            new Error(
+              `Port ${port} is already in use. Please close other instances or restart the application.`,
+            ),
+          );
+        } else {
+          reject(error);
+        }
+      });
+
+      this.server.listen(port, () => {
+        console.log(
+          `[ExtensionBridgeServer] ✓ Started on port ${port}`,
+          Date.now(),
+        );
+        resolve('');
+      });
+    });
+  }
+
+  send<T extends Record<string, any>>(
+    request: Omit<IBridgeRequestParams, 'cwd'>,
+    cwd: string,
+    timeoutMs: number = 5000,
+  ): Promise<{
+    success: boolean;
+    data: T;
+  }> {
+    return new Promise((resolve, reject) => {
+      const requestId = randomUUID();
+      const data = Buffer.from(
+        JSON.stringify({
+          ...request,
+          requestId,
+          cwd,
+        }),
+      );
+
+      const client = this.clients.get(cwd);
+      if (!client || client.destroyed) {
+        reject(new Error(`No active client for cwd: ${cwd}`));
+        return;
+      }
+
+      // 设置超时
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Request timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      // 存储pending请求
+      this.pendingRequests.set(requestId, {
+        resolve,
+        reject,
+        timeout,
+      });
+
+      // 发送请求
+      client.write(data);
+    });
+  }
+
+  register<T>(
+    operationType: string,
+    handler: (
+      params: IBridgeRequestParams['params'],
+      cwd: string,
+      webContents?: WebContents,
+    ) => Promise<T>,
+  ) {
+    this.handlers.set(operationType, handler);
+  }
+
+  stop() {
+    if (this.server) {
+      this.server.close();
+      this.clients.forEach((client) => {
+        client.destroy();
+      });
+      this.clients.clear();
+      this.handlers.clear();
+
+      // 清理所有pending请求
+      for (const [requestId, pending] of this.pendingRequests.entries()) {
+        pending.reject(new Error('Server stopped'));
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(requestId);
+      }
+    }
+  }
+}
+
+export const bridgeServer = new ExtensionBridgeServer();
+
+bridgeServer.register('ping', async (params, cwd, webContents) => {
+  if (webContents) {
+    const caller = getRendererCaller<IPCRendererHandlers>(webContents);
+    caller.extension.ready.send();
+    return { success: true, data: { msg: 'connect success' } };
+  }
+  return { success: false, data: {}, errorMsg: `WebContents not found` };
+});
+/** trigger by click link in editor */
+bridgeServer.register('link.open', async (params, cwd, webContents) => {
+  if (webContents) {
+    const caller = getRendererCaller<IPCRendererHandlers>(webContents);
+    caller.browser.open.send(params.url);
+    return { success: true, data: { msg: 'called success' } };
+  }
+  return { success: false, data: {}, errorMsg: `WebContents not found` };
+});

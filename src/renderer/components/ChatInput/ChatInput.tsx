@@ -1,11 +1,11 @@
 import {
   BrainIcon,
-  ChipIcon,
   ComputerTerminal01Icon,
   NoteEditIcon,
   NoteIcon,
   SentIcon,
 } from '@hugeicons/core-free-icons';
+import { Square } from 'lucide-react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type React from 'react';
 import {
@@ -19,83 +19,124 @@ import {
   useState,
 } from 'react';
 import { useInputHandlers } from '../../hooks/useInputHandlers';
-import type { SlashCommand } from '../../hooks/useSlashCommands';
-import type {
-  HandlerInput,
-  HandlerMethod,
-  HandlerOutput,
-} from '../../nodeBridge.types';
-import { Button, Textarea, Tooltip, TooltipPopup, TooltipTrigger } from '../ui';
+import { cn } from '../../lib/utils';
+import { useStore } from '../../store';
+import { ModelSelector } from '../ModelSelector';
+import {
+  Button,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupTextarea,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from '../ui';
 import { ImagePreview } from './ImagePreview';
 import { SuggestionDropdown } from './SuggestionDropdown';
 
-// Provider type from the API
-interface Provider {
-  id: string;
-  name: string;
-  doc?: string;
-  env?: string[];
-  apiEnv?: string[];
-  validEnvs: string[];
-  hasApiKey: boolean;
+interface DevModeInfoProps {
+  sessionId: string | null;
+  cwd: string;
+  processingStatus: string | null;
+  thinking: string | null;
+  thinkingEnabled: boolean;
+  thinkingVariants: string[];
 }
 
-// Model type from the API
-interface Model {
-  name: string;
-  modelId: string;
-  value: string;
-}
+const DevModeInfo = memo(function DevModeInfo({
+  sessionId,
+  cwd,
+  processingStatus,
+  thinking,
+  thinkingEnabled,
+  thinkingVariants,
+}: DevModeInfoProps) {
+  const request = useStore((state) => state.request);
+  const [modelDebugInfo, setModelDebugInfo] = useState<{
+    session: string | null;
+    project: string | null;
+    global: string | null;
+  }>({ session: null, project: null, global: null });
 
-interface ChatInputProps {
-  onSubmit: (value: string, images?: string[]) => void;
-  onCancel?: () => void;
-  onShowForkModal?: () => void;
-  fetchCommands?: () => Promise<SlashCommand[]>;
-  placeholder?: string;
-  disabled?: boolean;
-  isProcessing?: boolean;
-  modelName?: string;
-  sessionId?: string | null;
-  workspaceId?: string | null;
-  cwd?: string;
-  request?: <K extends HandlerMethod>(
-    method: K,
-    params: HandlerInput<K>,
-  ) => Promise<HandlerOutput<K>>;
-}
+  useEffect(() => {
+    if (!cwd) return;
 
-// Default implementations
-const defaultFetchCommands = async () => [];
-const noop = () => {};
+    const fetchModelConfigs = async () => {
+      try {
+        const [globalRes, projectRes, sessionRes] = await Promise.all([
+          request('config.get', { cwd, isGlobal: true, key: 'model' }),
+          request('config.get', { cwd, isGlobal: false, key: 'model' }),
+          sessionId
+            ? request('session.config.get', { cwd, sessionId, key: 'model' })
+            : Promise.resolve({ data: { value: null } }),
+        ]);
+        setModelDebugInfo({
+          global: globalRes?.data?.value || null,
+          project: projectRes?.data?.value || null,
+          session: sessionRes?.data?.value || null,
+        });
+      } catch {
+        setModelDebugInfo({ session: null, project: null, global: null });
+      }
+    };
 
-// Handle type for parent to focus the input
+    fetchModelConfigs();
+  }, [cwd, sessionId, request]);
+
+  return (
+    <div className="mb-2 px-3 py-2 rounded-md text-xs font-mono bg-muted border border-border text-muted-foreground">
+      <div>Session ID: {sessionId || 'null'}</div>
+      <div>CWD: {cwd || 'null'}</div>
+      <div>Processing: {processingStatus || 'null'}</div>
+      <div>
+        Thinking: {thinking || 'null'} | Enabled: {String(thinkingEnabled)} |
+        Variants: {JSON.stringify(thinkingVariants || [])}
+      </div>
+      <div>
+        Model: session={modelDebugInfo.session || 'null'} | project=
+        {modelDebugInfo.project || 'null'} | global=
+        {modelDebugInfo.global || 'null'}
+      </div>
+    </div>
+  );
+});
+
+const DEFAULT_PLACEHOLDER = 'Ask anything, @ for context';
+
 export interface ChatInputHandle {
   focus: () => void;
 }
 
 export const ChatInput = memo(
-  forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-    {
-      onSubmit,
-      onCancel = noop,
-      onShowForkModal = noop,
-      fetchCommands = defaultFetchCommands,
-      placeholder = 'Type your message...',
-      disabled = false,
-      isProcessing = false,
-      modelName,
-      sessionId = null,
-      workspaceId = null,
-      cwd,
-      request,
-    },
-    ref,
-  ) {
-    // Ref for textarea
+  forwardRef<ChatInputHandle>(function ChatInput(_props, ref) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [localModel, setLocalModel] = useState<string | null>(null);
 
-    // Expose focus method to parent via ref
+    const selectedSessionId = useStore((state) => state.selectedSessionId);
+    const selectedWorkspaceId = useStore((state) => state.selectedWorkspaceId);
+    const workspaces = useStore((state) => state.workspaces);
+    const request = useStore((state) => state.request);
+    const sendMessageWith = useStore((state) => state.sendMessageWith);
+    const developerMode = useStore((state) => state.developerMode);
+    const storeSendMessage = useStore((state) => state.sendMessage);
+    const cancelSession = useStore((state) => state.cancelSession);
+    const showForkModal = useStore((state) => state.showForkModal);
+    const fetchSlashCommandList = useStore(
+      (state) => state.fetchSlashCommandList,
+    );
+    const getSessionInput = useStore((state) => state.getSessionInput);
+    const createSession = useStore((state) => state.createSession);
+
+    const sessionId = selectedSessionId;
+    const workspaceId = selectedWorkspaceId;
+    const workspace = workspaceId ? workspaces[workspaceId] : null;
+    const cwd = workspace?.worktreePath || '';
+
+    const processingState = useStore((state) =>
+      sessionId ? state.sessionProcessing[sessionId] : null,
+    );
+    const isProcessing = processingState?.status === 'processing';
+
     useImperativeHandle(
       ref,
       () => ({
@@ -106,6 +147,58 @@ export const ChatInput = memo(
       [],
     );
 
+    useEffect(() => {
+      const handleFocusRequest = () => {
+        textareaRef.current?.focus();
+      };
+
+      window.addEventListener('chat-input:focus', handleFocusRequest);
+      return () =>
+        window.removeEventListener('chat-input:focus', handleFocusRequest);
+    }, []);
+
+    const handleSubmit = useCallback(
+      async (content: string, images?: string[]) => {
+        if (!content.trim() || isProcessing) return;
+
+        const draftInput = getSessionInput(sessionId ?? '__draft__');
+
+        let targetSessionId = sessionId;
+        if (!targetSessionId) {
+          targetSessionId = createSession();
+        }
+
+        await storeSendMessage({
+          message: content,
+          planMode: draftInput.planMode,
+          think: draftInput.thinking,
+          images,
+          model: localModel ?? undefined,
+        });
+
+        setLocalModel(null);
+      },
+      [
+        isProcessing,
+        sessionId,
+        createSession,
+        getSessionInput,
+        storeSendMessage,
+        localModel,
+      ],
+    );
+
+    const handleCancel = useCallback(() => {
+      if (sessionId) {
+        cancelSession(sessionId);
+      }
+    }, [sessionId, cancelSession]);
+
+    const fetchCommands = useCallback(async () => {
+      if (!workspaceId) return [];
+      return fetchSlashCommandList(workspaceId);
+    }, [workspaceId, fetchSlashCommandList]);
+
     const {
       inputState,
       mode,
@@ -115,217 +208,91 @@ export const ChatInput = memo(
       thinkingEnabled,
       setThinkingEnabled,
       setThinking,
+      setThinkingVariants,
       isSearching,
     } = useInputHandlers({
       sessionId,
       workspaceId,
-      onSubmit,
-      onCancel,
-      onShowForkModal,
+      onSubmit: handleSubmit,
+      onCancel: handleCancel,
+      onShowForkModal: showForkModal,
       fetchCommands,
       isProcessing,
-      request: request!,
-      cwd: cwd || '',
+      sendMessageWith,
+      request,
+      cwd,
     });
 
     const { planMode, thinking, togglePlanMode, toggleThinking } = inputState;
 
-    // State for session config model (fetched from session)
-    const [sessionConfigModel, setSessionConfigModel] = useState<string | null>(
-      null,
-    );
-
-    // Fetch session config model when sessionId changes
-    useEffect(() => {
-      if (!sessionId || !cwd || !request) {
-        setSessionConfigModel(null);
-        return;
-      }
-
-      const fetchSessionConfigModel = async () => {
+    const fetchVariantsForModel = useCallback(
+      async (model: string) => {
         try {
-          const response = await request('session.config.get', {
-            cwd,
-            sessionId,
-            key: 'model',
-          });
-          if (response.success && response.data.value) {
-            setSessionConfigModel(response.data.value);
-          } else {
-            setSessionConfigModel(null);
-          }
-        } catch {
-          setSessionConfigModel(null);
-        }
-      };
-
-      fetchSessionConfigModel();
-    }, [sessionId, cwd, request]);
-
-    // Reset provider/model selector state when sessionId changes
-    useEffect(() => {
-      setProviders([]);
-      setModels([]);
-      setProviderValue(null);
-      setModelValue(null);
-    }, [sessionId]);
-
-    // Determine effective model: session config model takes priority over passed modelName
-    const effectiveModelName = sessionConfigModel || modelName;
-
-    // Parse effectiveModelName into provider and model
-    const [currentProvider, currentModel] = useMemo(() => {
-      if (!effectiveModelName) return ['', ''];
-      const parts = effectiveModelName.split('/');
-      if (parts.length >= 2) {
-        return [parts[0], parts.slice(1).join('/')];
-      }
-      return ['', effectiveModelName];
-    }, [effectiveModelName]);
-
-    // Provider and model selector state
-    const [providers, setProviders] = useState<Provider[]>([]);
-    const [models, setModels] = useState<Model[]>([]);
-    const [isLoadingProviders, setIsLoadingProviders] = useState(false);
-    const [isLoadingModels, setIsLoadingModels] = useState(false);
-    const [providerValue, setProviderValue] = useState<string | null>(null);
-    const [modelValue, setModelValue] = useState<string | null>(null);
-
-    // Fetch providers when provider selector opens
-    const handleProviderOpen = useCallback(async () => {
-      if (!request || !cwd || isLoadingProviders) return;
-
-      setIsLoadingProviders(true);
-      try {
-        const response = await request('providers.list', { cwd });
-        if (response.success) {
-          // Filter to only show providers with valid configuration
-          const validProviders = response.data.providers.filter(
-            (p: Provider) => p.validEnvs.length > 0 || p.hasApiKey,
-          );
-          setProviders(validProviders);
-        }
-      } catch {
-        // Ignore errors
-      } finally {
-        setIsLoadingProviders(false);
-      }
-    }, [request, cwd, isLoadingProviders]);
-
-    // Fetch models for the current provider when model selector opens
-    // Returns the fetched models so caller can use them
-    const handleModelOpen = useCallback(
-      async (providerId?: string): Promise<Model[]> => {
-        if (!request || !cwd || isLoadingModels) return [];
-
-        const targetProvider = providerId || currentProvider;
-        if (!targetProvider) return [];
-
-        setIsLoadingModels(true);
-        try {
-          const response = await request('models.list', { cwd });
-          if (response.success) {
-            const providerModels =
-              response.data.groupedModels.find(
-                (g: { providerId: string }) => g.providerId === targetProvider,
-              )?.models || [];
-            setModels(providerModels);
-            return providerModels;
-          }
-        } catch {
-          // Ignore errors
-        } finally {
-          setIsLoadingModels(false);
-        }
-        return [];
-      },
-      [request, cwd, currentProvider, isLoadingModels],
-    );
-
-    // Handle provider change
-    const handleProviderChange = useCallback(
-      async (newProvider: string) => {
-        if (!request || !cwd || !sessionId || newProvider === currentProvider)
-          return;
-
-        // Fetch models for the new provider
-        const fetchedModels = await handleModelOpen(newProvider);
-
-        // Auto-select the first model and update session config
-        if (fetchedModels.length > 0) {
-          const firstModel = fetchedModels[0];
-          const fullModelValue = `${newProvider}/${firstModel.modelId}`;
-
-          setModelValue(firstModel.modelId);
-
-          try {
-            await request('session.config.set', {
-              cwd,
-              sessionId,
-              key: 'model',
-              value: fullModelValue,
-            });
-          } catch {
-            // Ignore errors
-          }
-        }
-      },
-      [request, cwd, sessionId, currentProvider, handleModelOpen],
-    );
-
-    // Handle model change
-    const handleModelChange = useCallback(
-      async (newModel: string) => {
-        if (!request || !cwd || !sessionId) return;
-
-        // Determine which provider to use
-        const provider = providerValue || currentProvider;
-        const fullModelValue = `${provider}/${newModel}`;
-
-        try {
-          await request('session.config.set', {
-            cwd,
-            sessionId,
-            key: 'model',
-            value: fullModelValue,
+          const res = await request('models.getVariants', {
+            cwd: cwd || '/tmp',
+            model,
           });
 
-          // Fetch model info to update thinking state
-          const modelInfoResponse = await request('session.getModel', {
-            cwd,
-            sessionId,
-            includeModelInfo: true,
-          });
-
-          if (
-            modelInfoResponse.success &&
-            'modelInfo' in modelInfoResponse.data &&
-            modelInfoResponse.data.modelInfo
-          ) {
-            const hasThinkingConfig =
-              !!modelInfoResponse.data.modelInfo.thinkingConfig;
-            setThinkingEnabled(hasThinkingConfig);
-            setThinking(hasThinkingConfig ? 'low' : null);
+          if (res.success && res.data?.variants) {
+            const variantKeys = Object.keys(res.data.variants);
+            const hasThinking = variantKeys.length > 0;
+            setThinkingEnabled(hasThinking);
+            setThinkingVariants(variantKeys);
+            setThinking(hasThinking ? variantKeys[0] : null);
           } else {
             setThinkingEnabled(false);
+            setThinkingVariants([]);
             setThinking(null);
           }
         } catch {
-          // On error, disable thinking
           setThinkingEnabled(false);
+          setThinkingVariants([]);
           setThinking(null);
         }
       },
-      [
-        request,
-        cwd,
-        sessionId,
-        providerValue,
-        currentProvider,
-        setThinkingEnabled,
-        setThinking,
-      ],
+      [request, cwd, setThinkingEnabled, setThinkingVariants, setThinking],
     );
+
+    const handleModelChange = useCallback(
+      async (model: string) => {
+        if (!sessionId) {
+          setLocalModel(model);
+        }
+        fetchVariantsForModel(model);
+      },
+      [sessionId, fetchVariantsForModel],
+    );
+
+    useEffect(() => {
+      if (sessionId || !cwd) return;
+
+      const fetchDefaultModelVariants = async () => {
+        try {
+          const projectRes = await request('config.get', {
+            cwd,
+            isGlobal: false,
+            key: 'model',
+          });
+          const model = projectRes?.data?.value;
+          if (model) {
+            fetchVariantsForModel(model);
+            return;
+          }
+
+          const globalRes = await request('config.get', {
+            cwd,
+            isGlobal: true,
+            key: 'model',
+          });
+          const globalModel = globalRes?.data?.value;
+          if (globalModel) {
+            fetchVariantsForModel(globalModel);
+          }
+        } catch {}
+      };
+
+      fetchDefaultModelVariants();
+    }, [sessionId, cwd, request, fetchVariantsForModel]);
 
     const { value } = inputState.state;
     const canSend = value.trim().length > 0;
@@ -366,9 +333,7 @@ export const ChatInput = memo(
     const isSuggestionVisible = suggestions.type !== null;
 
     const handleSendClick = () => {
-      // Prevent submission when suggestions are visible
-      // Allow clicks during processing (toast warning will be shown by handler)
-      if (canSend && (!disabled || isProcessing) && !isSuggestionVisible) {
+      if (canSend && !isSuggestionVisible) {
         const submitEvent = {
           key: 'Enter',
           preventDefault: () => {},
@@ -376,31 +341,33 @@ export const ChatInput = memo(
           metaKey: false,
           shiftKey: false,
           altKey: false,
-          // Required: onKeyDown checks isComposing to avoid submitting during IME composition (e.g., Chinese input)
           nativeEvent: { isComposing: false },
         } as React.KeyboardEvent<HTMLTextAreaElement>;
         handlers.onKeyDown(submitEvent);
       }
     };
 
-    const borderColor = useMemo(() => {
-      // Memory and bash input modes take precedence
-      if (mode === 'memory') return 'var(--brand-purple, #8b5cf6)';
-      if (mode === 'bash') return 'var(--brand-orange, #f97316)';
-      // Plan mode colors
-      if (planMode === 'plan') return '#3b82f6';
-      if (planMode === 'brainstorm') return '#8b5cf6';
-      return 'var(--border-subtle)';
+    const modeColorClass = useMemo(() => {
+      if (mode === 'memory') return 'border-violet-500 ring-violet-500/40';
+      if (mode === 'bash') return 'border-orange-500 ring-orange-500/40';
+      if (planMode === 'plan') return 'border-blue-500 ring-blue-500/40';
+      if (planMode === 'brainstorm')
+        return 'border-violet-500 ring-violet-500/40';
+      return '';
     }, [mode, planMode]);
 
     const modeInfo = useMemo(() => {
       if (mode === 'memory')
-        return { icon: NoteIcon, label: 'Memory', color: '#8b5cf6' };
+        return {
+          icon: NoteIcon,
+          label: 'Memory',
+          colorClass: 'text-violet-500',
+        };
       if (mode === 'bash')
         return {
           icon: ComputerTerminal01Icon,
           label: 'Bash',
-          color: '#f97316',
+          colorClass: 'text-orange-500',
         };
       return null;
     }, [mode]);
@@ -416,194 +383,92 @@ export const ChatInput = memo(
 
     return (
       <div className="relative">
-        {/* Suggestion Dropdown */}
+        {developerMode && (
+          <DevModeInfo
+            sessionId={sessionId}
+            cwd={cwd}
+            processingStatus={processingState?.status || null}
+            thinking={thinking}
+            thinkingEnabled={thinkingEnabled}
+            thinkingVariants={inputState.thinkingVariants}
+          />
+        )}
+
         {suggestions.type && (
           <SuggestionDropdown
             type={suggestions.type}
             items={suggestions.items}
             selectedIndex={suggestions.selectedIndex}
+            onHover={suggestions.onHover}
+            onSelect={suggestions.onSelect}
           />
         )}
 
-        {/* Searching indicator */}
-        {isSearching && suggestions.items.length === 0 && (
-          <div
-            className="absolute bottom-full left-0 mb-1 px-3 py-2 text-sm rounded-md"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-secondary)',
-            }}
-          >
-            Searching...
-          </div>
-        )}
-
-        {/* Main Input Container */}
-        <div
-          className="rounded-lg overflow-hidden transition-colors"
-          style={{
-            border: `1px solid ${borderColor}`,
-            backgroundColor: 'var(--bg-surface)',
-          }}
-        >
-          {/* Mode indicator */}
+        <InputGroup className={modeColorClass}>
           {modeInfo && (
-            <div
-              className="flex items-center gap-2 px-3 py-1.5 border-b"
-              style={{
-                borderColor: 'var(--border-subtle)',
-                backgroundColor: `${modeInfo.color}10`,
-              }}
-            >
+            <InputGroupAddon align="block-start" className="border-b">
               <HugeiconsIcon
                 icon={modeInfo.icon}
                 size={14}
-                color={modeInfo.color}
+                className={modeInfo.colorClass}
               />
-              <span
-                className="text-xs font-medium"
-                style={{ color: modeInfo.color }}
-              >
+              <span className={cn('text-xs font-medium', modeInfo.colorClass)}>
                 {modeInfo.label} Mode
               </span>
-              <span
-                className="text-xs"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
+              <span className="text-xs text-muted-foreground">
                 Press Esc to exit
               </span>
-            </div>
+            </InputGroupAddon>
           )}
 
-          {/* Textarea */}
-          <Textarea
+          <InputGroupTextarea
             ref={textareaRef}
             value={displayValue}
             onChange={handleChange}
             onSelect={handleSelect}
             onKeyDown={handlers.onKeyDown}
             onPaste={handlers.onPaste}
-            placeholder={placeholder}
-            disabled={disabled && !isProcessing}
-            className="border-0 rounded-none resize-none focus:ring-0 focus-visible:ring-0"
-            style={{
-              minHeight: '80px',
-              maxHeight: '200px',
-            }}
+            placeholder={DEFAULT_PLACEHOLDER}
+            disabled={!workspaceId}
+            rows={3}
           />
 
-          {/* Image Preview */}
-          <ImagePreview
-            images={pastedImages}
-            onRemove={imageManager.removePastedImage}
-          />
+          {pastedImages.length > 0 && (
+            <ImagePreview
+              images={pastedImages}
+              onRemove={imageManager.removePastedImage}
+            />
+          )}
 
-          {/* Bottom Toolbar */}
-          <div
-            className="flex items-center justify-between px-2 py-1.5 border-t"
-            style={{ borderColor: 'var(--border-subtle)' }}
-          >
-            {/* Left side tools */}
+          <InputGroupAddon align="block-end" className="justify-between">
             <div className="flex items-center gap-1">
-              {/* Provider and Model selectors */}
-              {effectiveModelName && request && cwd && sessionId && (
-                <div className="flex items-center gap-0.5">
-                  <HugeiconsIcon
-                    icon={ChipIcon}
-                    size={14}
-                    style={{ color: 'var(--text-secondary)' }}
-                    className="mr-1"
-                  />
-                  {/* Provider selector - native select */}
-                  <select
-                    value={providerValue || currentProvider}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setProviderValue(value);
-                      handleProviderChange(value);
-                    }}
-                    onFocus={() => {
-                      handleProviderOpen();
-                    }}
-                    className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded px-1 py-0.5"
-                    style={{ color: 'var(--text-secondary)' }}
-                    title="Select provider"
-                  >
-                    {isLoadingProviders ? (
-                      <option disabled>Loading...</option>
-                    ) : providers.length === 0 ? (
-                      <option value={currentProvider}>{currentProvider}</option>
-                    ) : (
-                      [...providers]
-                        .sort((a, b) => a.id.localeCompare(b.id))
-                        .map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.id}
-                          </option>
-                        ))
-                    )}
-                  </select>
-
-                  <span
-                    className="text-xs"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
-                    /
-                  </span>
-
-                  {/* Model selector - native select */}
-                  <select
-                    value={modelValue || currentModel}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setModelValue(value);
-                      handleModelChange(value);
-                    }}
-                    onFocus={() => {
-                      handleModelOpen(providerValue || undefined);
-                    }}
-                    className="text-xs font-medium bg-transparent border-0 outline-none cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 rounded px-1 py-0.5 max-w-[150px]"
-                    style={{ color: 'var(--text-secondary)' }}
-                    title="Select model"
-                  >
-                    {isLoadingModels ? (
-                      <option disabled>Loading...</option>
-                    ) : models.length === 0 ? (
-                      <option value={currentModel}>{currentModel}</option>
-                    ) : (
-                      [...models]
-                        .sort((a, b) => a.modelId.localeCompare(b.modelId))
-                        .map((model) => (
-                          <option key={model.modelId} value={model.modelId}>
-                            {model.modelId}
-                          </option>
-                        ))
-                    )}
-                  </select>
-                </div>
+              {cwd && (
+                <ModelSelector
+                  type={sessionId ? 'session' : 'project'}
+                  cwd={cwd}
+                  sessionId={sessionId ?? undefined}
+                  onModelChange={handleModelChange}
+                  localOnly={!sessionId}
+                  compact
+                />
               )}
 
-              {/* Plan/Brainstorm Mode Toggle */}
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => togglePlanMode()}
-                      className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{
-                        color:
-                          planMode === 'plan'
-                            ? '#3b82f6'
-                            : planMode === 'brainstorm'
-                              ? '#8b5cf6'
-                              : 'var(--text-secondary)',
-                      }}
+                      className={cn(
+                        planMode === 'plan' && 'text-blue-500',
+                        planMode === 'brainstorm' && 'text-violet-500',
+                      )}
                     >
                       <HugeiconsIcon icon={NoteEditIcon} size={14} />
-                      <span className="font-medium capitalize">{planMode}</span>
-                    </button>
+                      <span className="capitalize">{planMode}</span>
+                    </Button>
                   }
                 />
                 <TooltipPopup>
@@ -616,35 +481,28 @@ export const ChatInput = memo(
                 </TooltipPopup>
               </Tooltip>
 
-              {/* Thinking Toggle - only show when model supports thinking */}
               {thinkingEnabled && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => toggleThinking()}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${
+                        className={
                           thinking === 'high' ? 'thinking-high-twinkle' : ''
-                        }`}
-                        style={{
-                          color:
-                            thinking === 'high'
-                              ? '#d4a520'
-                              : thinking
-                                ? 'var(--brand-primary, #3b82f6)'
-                                : 'var(--text-secondary)',
-                        }}
+                        }
                       >
                         <HugeiconsIcon icon={BrainIcon} size={14} />
-                        <span className="font-medium capitalize">
+                        <span className="capitalize">
                           {thinking === null
                             ? 'Off'
                             : thinking === 'medium'
                               ? 'Med'
                               : thinking}
                         </span>
-                      </button>
+                      </Button>
                     }
                   />
                   <TooltipPopup>
@@ -654,58 +512,33 @@ export const ChatInput = memo(
               )}
             </div>
 
-            {/* Right side - Send button */}
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     type="button"
                     size="icon-sm"
-                    variant={canSend ? 'default' : 'ghost'}
-                    onClick={handleSendClick}
-                    disabled={!canSend || (disabled && !isProcessing)}
+                    onClick={isProcessing ? handleCancel : handleSendClick}
+                    disabled={isProcessing ? false : !canSend}
                   >
-                    <HugeiconsIcon icon={SentIcon} size={18} />
+                    {isProcessing ? (
+                      <Square size={16} fill="currentColor" />
+                    ) : (
+                      <HugeiconsIcon icon={SentIcon} size={16} />
+                    )}
                   </Button>
                 }
               />
               <TooltipPopup>
-                {canSend ? 'Send message (Enter)' : 'Type a message to send'}
+                {isProcessing
+                  ? 'Cancel (Esc)'
+                  : canSend
+                    ? 'Send message (Enter)'
+                    : 'Type a message to send'}
               </TooltipPopup>
             </Tooltip>
-          </div>
-        </div>
-
-        {/* Keyboard shortcuts hint */}
-        <div
-          className="flex items-center justify-center gap-4 mt-2 text-xs"
-          style={{ color: 'var(--text-tertiary)' }}
-        >
-          <span>
-            <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
-              @
-            </kbd>{' '}
-            files
-          </span>
-          <span>
-            <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
-              /
-            </kbd>{' '}
-            commands
-          </span>
-          <span>
-            <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
-              #
-            </kbd>{' '}
-            memory
-          </span>
-          <span>
-            <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
-              !
-            </kbd>{' '}
-            bash
-          </span>
-        </div>
+          </InputGroupAddon>
+        </InputGroup>
       </div>
     );
   }),

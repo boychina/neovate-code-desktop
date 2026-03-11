@@ -1,9 +1,9 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import { BrowserWindow } from 'electron';
 import type { IPty } from 'node-pty';
 import * as pty from 'node-pty';
-import os from 'node:os';
-import fs from 'node:fs';
-import crypto from 'node:crypto';
-import { BrowserWindow } from 'electron';
 
 export interface PTYCreateOptions {
   cwd?: string;
@@ -89,7 +89,7 @@ class PTYManager {
     );
 
     try {
-      const ptyProcess = pty.spawn(shell, [], {
+      const ptyProcess = pty.spawn(shell, ['-l'], {
         name: 'xterm-256color',
         cols,
         rows,
@@ -148,6 +148,14 @@ class PTYManager {
       instance.pty.kill();
       this.ptys.delete(ptyId);
     }
+  }
+
+  /**
+   * Get the PID of a PTY process
+   */
+  getPid(ptyId: string): number | null {
+    const instance = this.ptys.get(ptyId);
+    return instance ? instance.pty.pid : null;
   }
 
   /**

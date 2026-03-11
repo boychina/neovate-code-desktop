@@ -1,58 +1,25 @@
-import {
-  createContext,
-  memo,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { Button } from '@/components/ui/button';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { WorkspaceData } from '../client/types/entities';
+import type { NormalizedMessage } from '../client/types/message';
+import { AUTO_SCROLL_THRESHOLD_PX, FOCUS_DELAY_MS } from '../constants';
+import { useNotification } from '../hooks';
+import { useStore } from '../store';
+import { ActivityIndicator } from './ActivityIndicator';
+import { SessionInfoBar } from './SessionInfoBar';
+import { ApprovalPanel } from './ApprovalPanel';
+import { AskQuestionPanel } from './AskQuestionPanel';
+import { ChatInput, type ChatInputHandle } from './ChatInput';
+import { ForkModal } from './ForkModal';
+import { Message } from './messages/Message';
+import { splitMessages } from './messages/messageHelpers';
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from '@/components/ui/empty';
-import type { SessionData, WorkspaceData } from '../client/types/entities';
-import type { NormalizedMessage } from '../client/types/message';
-import { useStore } from '../store';
-import { ActivityIndicator } from './ActivityIndicator';
-import { ChatInput, type ChatInputHandle } from './ChatInput';
-import { Message } from './messages/Message';
-import { splitMessages } from './messages/messageHelpers';
-import { OpenAppButton } from './OpenAppButton';
-import { toastManager } from './ui/toast';
-
-// Define the context type
-interface WorkspaceContextType {
-  workspace: WorkspaceData;
-  activeSession: SessionData | null;
-  allSessions: SessionData[];
-  selectedSessionId: string | null;
-  selectSession: (id: string) => void;
-  messages: NormalizedMessage[];
-  inputValue: string;
-  isLoading: boolean;
-  sendMessage: (content: string) => Promise<void>;
-  setInputValue: (value: string) => void;
-}
-
-// Create the context
-const WorkspaceContext = createContext<WorkspaceContextType | undefined>(
-  undefined,
-);
-
-// Custom hook to use the context
-export function useWorkspaceContext() {
-  const context = useContext(WorkspaceContext);
-  if (!context) {
-    throw new Error('useWorkspaceContext must be used within WorkspacePanel');
-  }
-  return context;
-}
+} from './ui/empty';
+import { WelcomePanel } from './WelcomePanel';
 
 // Main component
 export const WorkspacePanel = ({
@@ -62,39 +29,39 @@ export const WorkspacePanel = ({
   workspace: WorkspaceData | null;
   emptyStateType: 'no-repos' | 'no-workspace' | null;
 }) => {
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Get store actions and state
   const request = useStore((state) => state.request);
-  const setSessions = useStore((state) => state.setSessions);
   const setMessages = useStore((state) => state.setMessages);
   const selectedWorkspaceId = useStore((state) => state.selectedWorkspaceId);
   const selectedSessionId = useStore((state) => state.selectedSessionId);
-  const selectSession = useStore((state) => state.selectSession);
   const workspaces = useStore((state) => state.workspaces);
-  const sessionsMap = useStore((state) => state.sessions);
   const messagesMap = useStore((state) => state.messages);
-  const fetchSlashCommandList = useStore(
-    (state) => state.fetchSlashCommandList,
-  );
-  const cancelSession = useStore((state) => state.cancelSession);
   const getSessionInput = useStore((state) => state.getSessionInput);
   const setSessionInput = useStore((state) => state.setSessionInput);
-  const storeSendMessage = useStore((state) => state.sendMessage);
   const slashCommandJSXBySession = useStore(
     (state) => state.slashCommandJSXBySession,
   );
 
-  // Get slash command JSX for current session
+  useNotification(selectedSessionId, workspace?.worktreePath ?? '');
+
+  const forkModalVisible = useStore((state) => state.forkModalVisible);
+  const hideForkModal = useStore((state) => state.hideForkModal);
+  const fork = useStore((state) => state.fork);
+
+  const approvalBySession = useStore((state) => state.approvalBySession);
+  const currentApproval = selectedSessionId
+    ? approvalBySession[selectedSessionId]
+    : null;
+  const hasApproval = !!currentApproval;
+
+  const isAskQuestion = currentApproval?.toolUse?.name === 'AskUserQuestion';
+
   const slashCommandJSX = selectedSessionId
     ? slashCommandJSXBySession[selectedSessionId]
     : null;
 
-  // Get sessions and messages for the current workspace from store - memoized to avoid infinite loop
-  const allSessions = useMemo(
-    () => (selectedWorkspaceId ? sessionsMap[selectedWorkspaceId] || [] : []),
-    [selectedWorkspaceId, sessionsMap],
+  const updateSessions = useStore((state) => state.updateSessions);
+  const createOrSelectEmptySession = useStore(
+    (state) => state.createOrSelectEmptySession,
   );
 
   const messages = useMemo(
@@ -102,77 +69,15 @@ export const WorkspacePanel = ({
     [selectedSessionId, messagesMap],
   );
 
-  const activeSession =
-    allSessions.find((s) => s.sessionId === selectedSessionId) || null;
-
   const connectionState = useStore((state) => state.state);
 
-  // Fetch sessions when selectedWorkspaceId changes
   useEffect(() => {
     if (connectionState !== 'connected') return;
+    if (!selectedWorkspaceId) return;
 
-    if (!selectedWorkspaceId) {
-      selectSession(null);
-      return;
-    }
+    updateSessions(selectedWorkspaceId);
+  }, [connectionState, selectedWorkspaceId, updateSessions]);
 
-    const workspace = workspaces[selectedWorkspaceId];
-    if (!workspace) {
-      selectSession(null);
-      return;
-    }
-
-    const fetchSessions = async () => {
-      try {
-        const response = await request('sessions.list', {
-          cwd: workspace.worktreePath,
-        });
-
-        if (response.success) {
-          const sessions: SessionData[] = response.data.sessions.map(
-            (s: any) => ({
-              ...s,
-              modified: new Date(s.modified).getTime(),
-              created: new Date(s.created).getTime(),
-            }),
-          );
-          setSessions(selectedWorkspaceId, sessions);
-        }
-      } catch (error) {
-        console.error('Failed to fetch sessions:', error);
-        setSessions(selectedWorkspaceId, []);
-      }
-    };
-
-    fetchSessions();
-  }, [
-    connectionState,
-    selectedWorkspaceId,
-    workspaces,
-    request,
-    setSessions,
-    selectSession,
-  ]);
-
-  // Validate selectedSessionId when sessions load
-  useEffect(() => {
-    if (allSessions.length > 0) {
-      // If no selected session or it doesn't exist in the list, set to first session
-      if (
-        !selectedSessionId ||
-        !allSessions.find((s) => s.sessionId === selectedSessionId)
-      ) {
-        selectSession(allSessions[0].sessionId);
-      }
-    } else {
-      // No sessions, reset selectedSessionId
-      if (selectedSessionId !== null) {
-        selectSession(null);
-      }
-    }
-  }, [allSessions, selectedSessionId, selectSession]);
-
-  // Fetch messages when selectedSessionId changes
   useEffect(() => {
     if (connectionState !== 'connected') return;
     if (!selectedSessionId || !selectedWorkspaceId) return;
@@ -204,7 +109,6 @@ export const WorkspacePanel = ({
     setMessages,
   ]);
 
-  // Fetch model info once per session to initialize thinking state
   useEffect(() => {
     if (connectionState !== 'connected') return;
     if (!selectedSessionId || !selectedWorkspaceId) return;
@@ -212,7 +116,6 @@ export const WorkspacePanel = ({
     const workspace = workspaces[selectedWorkspaceId];
     if (!workspace) return;
 
-    // Check if already initialized for this session
     const sessionInput = getSessionInput(selectedSessionId);
     if (sessionInput.thinkingInitialized) return;
 
@@ -228,25 +131,31 @@ export const WorkspacePanel = ({
           'modelInfo' in response.data &&
           response.data.modelInfo
         ) {
-          const hasThinkingConfig = !!response.data.modelInfo.thinkingConfig;
+          const variants = response.data.modelInfo.model?.variants;
+          const variantKeys =
+            variants && Object.keys(variants).length > 0
+              ? Object.keys(variants)
+              : [];
+          const hasThinking = variantKeys.length > 0;
           setSessionInput(selectedSessionId, {
-            thinkingEnabled: hasThinkingConfig,
-            thinking: hasThinkingConfig ? 'low' : null,
+            thinkingEnabled: hasThinking,
+            thinkingVariants: variantKeys,
+            thinking: hasThinking ? variantKeys[0] : null,
             thinkingInitialized: true,
           });
         } else {
-          // Model doesn't support thinking
           setSessionInput(selectedSessionId, {
             thinkingEnabled: false,
+            thinkingVariants: [],
             thinking: null,
             thinkingInitialized: true,
           });
         }
       } catch (error) {
         console.error('Failed to fetch model info:', error);
-        // Default to disabled on error
         setSessionInput(selectedSessionId, {
           thinkingEnabled: false,
+          thinkingVariants: [],
           thinking: null,
           thinkingInitialized: true,
         });
@@ -264,98 +173,27 @@ export const WorkspacePanel = ({
     setSessionInput,
   ]);
 
-  const sendMessage = useCallback(
-    async (content: string, images?: string[]) => {
-      if (!content.trim() || isLoading) return;
-
-      const inputState = getSessionInput(selectedSessionId || '');
-
-      setIsLoading(true);
-      try {
-        await storeSendMessage({
-          message: content,
-          planMode: inputState.planMode,
-          think: inputState.thinking,
-          images,
-        });
-        setInputValue('');
-      } finally {
-        setIsLoading(false);
-      }
+  const handleForkSelect = useCallback(
+    (uuid: string) => {
+      fork(uuid);
     },
-    [isLoading, selectedSessionId, getSessionInput, storeSendMessage],
+    [fork],
   );
 
-  const handleSelectSession = useCallback(
-    (id: string) => {
-      selectSession(id);
-      setInputValue('');
-    },
-    [selectSession],
-  );
-
-  const handleCancel = useCallback(() => {
-    if (selectedSessionId) {
-      cancelSession(selectedSessionId);
-    }
-    setIsLoading(false);
-  }, [selectedSessionId, cancelSession]);
-
-  const handleShowForkModal = useCallback(() => {
-    toastManager.add({
-      type: 'info',
-      title: 'Fork session',
-      description: 'Fork functionality is not implemented yet',
-    });
-  }, []);
-
-  // Create wrapper functions that provide context for ChatInput
-  const fetchCommands = useCallback(async () => {
-    if (!selectedWorkspaceId) return [];
-    return fetchSlashCommandList(selectedWorkspaceId);
-  }, [selectedWorkspaceId, fetchSlashCommandList]);
-
-  // Ref for ChatInput to focus on session change
   const chatInputRef = useRef<ChatInputHandle>(null);
 
-  // Auto-focus ChatInput when session is selected
   useEffect(() => {
     if (selectedSessionId) {
-      // Small delay to ensure the component is rendered
       const timer = setTimeout(() => {
         chatInputRef.current?.focus();
-      }, 100);
+      }, FOCUS_DELAY_MS);
       return () => clearTimeout(timer);
     }
   }, [selectedSessionId]);
 
-  const contextValue: WorkspaceContextType | null = useMemo(() => {
-    if (!workspace) return null;
-    return {
-      workspace,
-      activeSession,
-      allSessions,
-      selectedSessionId,
-      selectSession: handleSelectSession,
-      messages,
-      inputValue,
-      isLoading,
-      sendMessage,
-      setInputValue,
-    };
-  }, [
-    workspace,
-    activeSession,
-    allSessions,
-    selectedSessionId,
-    handleSelectSession,
-    messages,
-    inputValue,
-    isLoading,
-    sendMessage,
-  ]);
+  const multiProjectSupport = useStore((state) => state.multiProjectSupport);
 
-  if (!workspace || !contextValue) {
+  if (!workspace) {
     return (
       <div className="flex items-center justify-center h-full">
         <Empty>
@@ -380,65 +218,70 @@ export const WorkspacePanel = ({
   }
 
   return (
-    <WorkspaceContext.Provider value={contextValue}>
-      <div
-        className="flex flex-col h-full"
-        style={{ backgroundColor: 'var(--bg-primary)' }}
-      >
-        <WorkspacePanel.Header />
+    <>
+      <div className="flex flex-col h-full">
+        {!multiProjectSupport && <WorkspacePanel.Header />}
         <WorkspacePanel.Messages />
-        <div
-          className="p-4 flex flex-col gap-3"
-          style={{ borderTop: '1px solid var(--border-subtle)' }}
-        >
+        <div className="p-4 flex flex-col gap-3">
           <ActivityIndicator sessionId={selectedSessionId} />
-          <ChatInput
-            ref={chatInputRef}
-            onSubmit={sendMessage}
-            onCancel={handleCancel}
-            onShowForkModal={handleShowForkModal}
-            fetchCommands={fetchCommands}
-            placeholder={
-              selectedSessionId
-                ? 'Ask anything, @ for context'
-                : 'Ask anything, @ for context with a new session...'
-            }
-            modelName={workspace.context.settings?.model}
-            isProcessing={isLoading}
-            sessionId={selectedSessionId || undefined}
-            cwd={workspace.repoPath}
-            request={request}
-          />
+          {/* Show AskQuestionPanel for AskUserQuestion tool, ApprovalPanel for other tools, otherwise ChatInput */}
+          {hasApproval &&
+          selectedSessionId &&
+          isAskQuestion &&
+          currentApproval ? (
+            <AskQuestionPanel
+              sessionId={selectedSessionId}
+              questions={currentApproval.toolUse.params.questions || []}
+              onResolve={(result, answers) => {
+                if (result === 'deny') {
+                  currentApproval.resolve('deny');
+                } else {
+                  // Pass updated params with answers
+                  currentApproval.resolve('approve_once', {
+                    ...currentApproval.toolUse.params,
+                    answers,
+                  });
+                }
+              }}
+            />
+          ) : hasApproval && selectedSessionId ? (
+            <ApprovalPanel
+              sessionId={selectedSessionId}
+              cwd={workspace.worktreePath}
+            />
+          ) : (
+            <ChatInput ref={chatInputRef} />
+          )}
           {slashCommandJSX}
         </div>
       </div>
-    </WorkspaceContext.Provider>
+
+      {/* Fork Modal */}
+      <ForkModal
+        open={forkModalVisible}
+        onClose={hideForkModal}
+        messages={messages}
+        onSelect={handleForkSelect}
+      />
+    </>
   );
 };
 
-// Compound components
 WorkspacePanel.Header = function Header() {
-  const { workspace } = useWorkspaceContext();
-  const request = useStore((state) => state.request);
-
   return (
-    <div
-      className="flex items-center justify-between h-12 px-4"
-      style={{ borderBottom: '1px solid var(--border-subtle)' }}
-    >
-      <h2
-        className="text-base font-semibold"
-        style={{ color: 'var(--text-primary)' }}
-      >
-        {workspace.repoPath.split('/').pop()}
-      </h2>
-      <OpenAppButton cwd={workspace.worktreePath} request={request} />
+    <div className="flex items-center justify-between h-12 px-4">
+      <SessionInfoBar showProjectName={false} draggable={false} />
     </div>
   );
 };
 
 WorkspacePanel.Messages = function Messages() {
-  const { messages, selectedSessionId } = useWorkspaceContext();
+  const selectedSessionId = useStore((state) => state.selectedSessionId);
+  const messagesMap = useStore((state) => state.messages);
+  const messages = useMemo(
+    () => (selectedSessionId ? messagesMap[selectedSessionId] || [] : []),
+    [selectedSessionId, messagesMap],
+  );
 
   // Refs for auto-scroll functionality
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -458,7 +301,7 @@ WorkspacePanel.Messages = function Messages() {
 
     const { scrollTop, scrollHeight, clientHeight } = container;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    const isNearBottom = distanceFromBottom < 300; // 300px threshold
+    const isNearBottom = distanceFromBottom < AUTO_SCROLL_THRESHOLD_PX;
     const isFirstLoad =
       prevMessagesLengthRef.current === 0 && messages.length > 0;
     const isSessionSwitch = prevSessionIdRef.current !== selectedSessionId;
@@ -473,11 +316,9 @@ WorkspacePanel.Messages = function Messages() {
 
   return (
     <div ref={messagesEndRef} className="flex-1 overflow-y-auto p-4 min-w-0">
-      {messages.length === 0 ? (
-        <div className="text-center mt-8" style={{ color: '#999' }}>
-          No messages yet. Start a conversation!
-        </div>
-      ) : (
+      {!selectedSessionId ? (
+        <WelcomePanel />
+      ) : messages.length > 0 ? (
         <div className="min-w-0">
           {/* Completed messages (memoized to prevent re-renders) */}
           {completedMessages.map((message) => (
@@ -497,7 +338,7 @@ WorkspacePanel.Messages = function Messages() {
             />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 };
@@ -538,20 +379,6 @@ function BranchIcon() {
         fill="currentColor"
         d="M5 3a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 1a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm6 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 1a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM5 6h10v1H5V6z"
       />
-    </svg>
-  );
-}
-
-function StatusIcon({ status }: { status: string }) {
-  const color =
-    status === 'active'
-      ? '#10B981'
-      : status === 'archived'
-        ? '#6B7280'
-        : '#F59E0B';
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16">
-      <circle cx="8" cy="8" r="5" fill={color} />
     </svg>
   );
 }

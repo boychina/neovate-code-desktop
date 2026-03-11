@@ -9,7 +9,9 @@ Neovate Code Desktop is an Electron-based desktop application for the Neovate AI
 - Runtime: Node.js (Electron Main Process)
 - Frontend: React 19, TypeScript, Vite
 - State Management: Zustand
-- Styling: Tailwind CSS 4
+- Styling: Tailwind CSS v4, cva
+- UI: [Coss UI](https://coss.com/ui/docs)
+- Icons: Lucide React, Hugeicons
 - Testing: Vitest
 - Build: Electron Builder
 
@@ -21,8 +23,8 @@ npm run dev
 # Testing
 npm test
 
-# Build
-npm run package:mac
+# Build Local
+npm run package:local
 ```
 
 ## Progressive Disclosure
@@ -40,3 +42,5 @@ For detailed information, consult these documents as needed:
 
 - `src/main/ipc/index.ts` is the source of truth for typesafe IPC between main and renderer processes. Use `mainCaller` in renderer to invoke main handlers.
 - Don't run lint. Run `npm run typecheck` for type checking.
+- Icons: Prefer `lucide-react`. Only use `@hugeicons/react` when lucide doesn't have the icon.
+- Styling: Use `cn()` from `@/lib/utils` to merge Tailwind classes.

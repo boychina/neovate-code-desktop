@@ -1,37 +1,108 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useStore } from './store';
-import { useStoreConnection } from './hooks';
-import { RepoSidebar } from './components/RepoSidebar';
-import { WorkspacePanel } from './components/WorkspacePanel';
-// import { WorkspaceChanges } from './components/WorkspaceChanges';
-import { Terminal } from './components/Terminal';
-import TestComponent from './TestComponent';
-import { SettingsPage } from './components/settings';
-import { ServerErrorDialog } from './components/server-error-dialog';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AppLoading } from './components/AppLoading';
+import { ContentPanel } from './components/ContentPanel';
 import {
+  ActivityBar,
   AppLayout,
-  AppLayoutSidebar,
-  AppLayoutPrimaryPanel,
-  AppLayoutSecondaryPanel,
+  AppLayoutActivityBar,
+  AppLayoutChatPanel,
+  AppLayoutContentPanel,
+  AppLayoutPanelRow,
+  AppLayoutPrimarySidebar,
+  AppLayoutRightContainer,
+  AppLayoutRoot,
+  AppLayoutSecondarySidebar,
+  AppLayoutTitleBar,
+  PrimaryTitleBar,
+  SecondaryTitleBar,
+  SecondarySidebar,
+  SecondarySidebarToggles,
+  StatusBar,
+  TrafficLightsSection,
 } from './components/layout';
+import { OnboardingModal } from './components/Onboarding';
+import { RepoSidebar } from './components/RepoSidebar';
+import { ServerErrorDialog } from './components/ServerErrorDialog';
+import { SettingsPage } from './components/settings/SettingsPage';
+import TestComponent from './components/test/TestComponent';
+import { UpdaterToast } from './components/UpdaterToast';
+import { WorkspacePanel } from './components/WorkspacePanel';
+import { MIN_LOADING_TIME_MS } from './constants';
+import { useGlobalKeybindings, useStoreConnection } from './hooks';
+import { useStore } from './store';
 
 function App() {
   const { connectionState, serverError, retry, exit } = useStoreConnection();
 
-  const {
-    repos,
-    workspaces,
-    selectedRepoPath,
-    selectedWorkspaceId,
-    selectRepo,
-    selectWorkspace,
-    showSettings,
-    getGlobalConfigValue,
-    initialized,
-  } = useStore();
+  const repos = useStore((s) => s.repos);
+  const workspaces = useStore((s) => s.workspaces);
+  const selectedRepoPath = useStore((s) => s.selectedRepoPath);
+  const selectedWorkspaceId = useStore((s) => s.selectedWorkspaceId);
+  const showSettings = useStore((s) => s.showSettings);
+  const setShowSettings = useStore((s) => s.setShowSettings);
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  const initialized = useStore((s) => s.initialized);
+  const developerMode = useStore((s) => s.developerMode);
 
-  // Get theme from config (default to 'system')
-  const theme = getGlobalConfigValue<string>('desktop.theme', 'system');
+  // Minimum display time for loading animation
+  const loadStartTime = useRef(Date.now());
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+
+  useEffect(() => {
+    if (
+      import.meta.env.DEV &&
+      process.env.NODE_ENV !== 'production' &&
+      developerMode
+    ) {
+      void import('react-grab');
+    }
+  }, [developerMode]);
+
+  useEffect(() => {
+    if (
+      import.meta.env.DEV &&
+      process.env.NODE_ENV !== 'production' &&
+      developerMode
+    ) {
+      void import('react-scan').then(({ scan }) => {
+        scan({ enabled: true });
+      });
+    }
+  }, [developerMode]);
+
+  useEffect(() => {
+    const elapsed = Date.now() - loadStartTime.current;
+    const remaining = MIN_LOADING_TIME_MS - elapsed;
+
+    if (remaining <= 0) {
+      setMinTimeElapsed(true);
+    } else {
+      const timer = setTimeout(() => setMinTimeElapsed(true), remaining);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Listen for menu events from main process
+  useEffect(() => {
+    const cleanupSettings = window.electron.onMenuOpenSettings(() => {
+      setShowSettings(true);
+    });
+
+    const cleanupTheme = window.electron.onMenuToggleTheme(() => {
+      // Toggle between light and dark
+      const newTheme = theme === 'dark' ? 'light' : 'dark';
+      setTheme(newTheme);
+    });
+
+    return () => {
+      cleanupSettings();
+      cleanupTheme();
+    };
+  }, [setShowSettings, setTheme, theme]);
+
+  // Global keybindings (New Chat, Prev/Next Session, Copy Path)
+  useGlobalKeybindings();
 
   // Apply dark/light mode based on theme setting
   useEffect(() => {
@@ -114,11 +185,15 @@ function App() {
       />
     );
   }
-  if (
+
+  // Show loading until both: connection ready AND minimum time elapsed
+  const isLoading =
     connectionState === 'idle' ||
     connectionState === 'connecting' ||
-    (!initialized && connectionState === 'disconnected')
-  ) {
+    (!initialized && connectionState === 'disconnected') ||
+    !minTimeElapsed;
+
+  if (isLoading) {
     return <AppLoading />;
   }
 
@@ -134,82 +209,98 @@ function App() {
       : 'no-workspace'
     : null;
 
-  // Show settings page if enabled
-  if (showSettings) {
-    return (
-      <div className="h-dvh flex flex-col">
+  return (
+    <>
+      {/* Settings Page - hidden with CSS when not active */}
+      <div
+        className="h-full flex flex-col"
+        style={{ display: showSettings ? 'flex' : 'none' }}
+      >
         <SettingsPage />
       </div>
-    );
-  }
 
-  return (
-    <div
-      className="flex flex-col h-dvh"
-      style={{ backgroundColor: 'var(--bg-primary)' }}
-    >
+      {/* Main App - hidden with CSS when settings is shown */}
       <AppLayout>
-        {/* Sidebar */}
-        <AppLayoutSidebar>
-          <RepoSidebar
-            repos={Object.values(repos)}
-            selectedRepoPath={selectedRepoPath}
-            selectedWorkspaceId={selectedWorkspaceId}
-            onSelectRepo={selectRepo}
-            onSelectWorkspace={selectWorkspace}
-          />
-        </AppLayoutSidebar>
+        <div
+          className="h-full flex flex-col"
+          style={{ display: showSettings ? 'none' : 'flex' }}
+        >
+          <AppLayoutRoot>
+            {/* Traffic Lights + Toggle - fixed position, always visible */}
+            <TrafficLightsSection />
 
-        {/* Main Content */}
-        <AppLayoutPrimaryPanel>
-          <WorkspacePanel
-            workspace={selectedWorkspace}
-            emptyStateType={emptyStateType}
-          />
-        </AppLayoutPrimaryPanel>
+            {/* Primary Sidebar (left, full height) */}
+            <AppLayoutPrimarySidebar>
+              <RepoSidebar />
+            </AppLayoutPrimarySidebar>
 
-        {/* Right Panel */}
-        <AppLayoutSecondaryPanel>
-          <div className="h-full flex flex-col">
-            {/* <WorkspaceChanges workspace={selectedWorkspace} /> */}
-            {visitedRepoPathsArray.map((repoPath) => (
-              <Terminal
-                key={repoPath}
-                cwd={repoPath}
-                hidden={repoPath !== selectedRepoPath}
-              />
-            ))}
-          </div>
-        </AppLayoutSecondaryPanel>
+            {/* Right Container (title row + panels + status bar) */}
+            <AppLayoutRightContainer>
+              {/* Title Bar */}
+              <TitleBar />
+
+              {/* Panel Area */}
+              <div className="flex-1 flex min-h-0">
+                <AppLayoutPanelRow>
+                  {/* Chat Panel (main content) */}
+                  <AppLayoutChatPanel>
+                    <WorkspacePanel
+                      workspace={selectedWorkspace}
+                      emptyStateType={emptyStateType}
+                    />
+                  </AppLayoutChatPanel>
+
+                  {/* Content Panel (terminal, logs) */}
+                  <AppLayoutContentPanel>
+                    <div className="h-full flex flex-col">
+                      {visitedRepoPathsArray.map((repoPath) => (
+                        <ContentPanel
+                          key={repoPath}
+                          repoPath={repoPath}
+                          hidden={repoPath !== selectedRepoPath}
+                        />
+                      ))}
+                    </div>
+                  </AppLayoutContentPanel>
+
+                  {/* Secondary Sidebar (files, git) */}
+                  <AppLayoutSecondarySidebar>
+                    <SecondarySidebar />
+                  </AppLayoutSecondarySidebar>
+                </AppLayoutPanelRow>
+
+                {/* Activity Bar (always visible, fixed width) */}
+                <AppLayoutActivityBar>
+                  <ActivityBar />
+                </AppLayoutActivityBar>
+              </div>
+
+              {/* Status Bar - hidden for now */}
+              {/* <StatusBar /> */}
+            </AppLayoutRightContainer>
+          </AppLayoutRoot>
+
+          <TestComponent />
+        </div>
       </AppLayout>
 
-      <TestComponent />
-    </div>
+      {/* Onboarding Modal - renders on top when visible */}
+      <OnboardingModal />
+      <UpdaterToast />
+    </>
   );
 }
 
-function AppLoading() {
-  const [text, setText] = useState('');
-  const fullText = 'Neovate';
-
-  useEffect(() => {
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index < fullText.length) {
-        setText(fullText.slice(0, index + 1));
-        index++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 150);
-
-    return () => clearInterval(interval);
-  }, []);
-
+/**
+ * Title Bar component
+ */
+function TitleBar() {
   return (
-    <div className="flex h-screen w-screen flex-col items-center justify-center bg-white text-neutral-900">
-      <div className="text-6xl font-light">{text}</div>
-    </div>
+    <AppLayoutTitleBar>
+      <PrimaryTitleBar />
+      <SecondaryTitleBar />
+      <SecondarySidebarToggles />
+    </AppLayoutTitleBar>
   );
 }
 

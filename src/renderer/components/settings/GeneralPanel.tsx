@@ -1,0 +1,159 @@
+import { SettingsIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { useTranslation } from 'react-i18next';
+import { useRendererApp } from '../../core';
+import { localeOptions, type Locales } from '../../core/i18n';
+import { ipcMainCaller } from '../../lib/ipc';
+import { useStore } from '../../store';
+import type { ThemeValue } from '../../store/slices/desktopSettings';
+import { Input } from '../ui/input';
+import { Spinner } from '../ui/spinner';
+import { Switch } from '../ui/switch';
+import { ToggleOptions } from '../ui/toggle-options';
+import { SettingsRow } from './components/SettingRow';
+
+export const GeneralPanel = () => {
+  const { t } = useTranslation();
+  const app = useRendererApp();
+
+  const theme = useStore((state) => state.theme);
+  const setTheme = useStore((state) => state.setTheme);
+  const terminalFontSize = useStore((state) => state.terminalFontSize);
+  const setTerminalFontSize = useStore((state) => state.setTerminalFontSize);
+  const terminalFont = useStore((state) => state.terminalFont);
+  const setTerminalFont = useStore((state) => state.setTerminalFont);
+
+  const globalConfig = useStore((state) => state.globalConfig);
+  const isConfigLoading = useStore((state) => state.isConfigLoading);
+  const developerMode = useStore((state) => state.developerMode);
+  const setDeveloperMode = useStore((state) => state.setDeveloperMode);
+  const runOnStartup = useStore((state) => state.runOnStartup);
+  const setRunOnStartup = useStore((state) => state.setRunOnStartup);
+  const locale = useStore((state) => state.locale);
+  const setLocale = useStore((state) => state.setLocale);
+  const multiProjectSupport = useStore((state) => state.multiProjectSupport);
+  const setMultiProjectSupport = useStore(
+    (state) => state.setMultiProjectSupport,
+  );
+
+  const handleThemeChange = (newTheme: ThemeValue) => {
+    if (newTheme === theme) return;
+    setTheme(newTheme);
+  };
+
+  const handleLocaleChange = (newLocale: Locales) => {
+    setLocale(newLocale);
+    app.i18nManager.applyUILocale(newLocale);
+  };
+
+  const handleRunOnStartupChange = async (enabled: boolean) => {
+    setRunOnStartup(enabled);
+    await ipcMainCaller.app.setLoginItemSettings({ openAtLogin: enabled });
+  };
+
+  if (isConfigLoading || globalConfig === null) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Spinner className="h-6 w-6" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold mb-6 flex items-center gap-2 text-foreground">
+        <HugeiconsIcon icon={SettingsIcon} size={22} strokeWidth={1.5} />
+        {t('settings.general')}
+      </h1>
+
+      <div className="space-y-0">
+        {/* Language */}
+        <SettingsRow
+          title={t('settings.general.language')}
+          description={t('settings.general.language.description')}
+        >
+          <ToggleOptions
+            value={locale}
+            onChange={handleLocaleChange}
+            options={localeOptions}
+          />
+        </SettingsRow>
+
+        {/* Theme */}
+        <SettingsRow
+          title={t('settings.theme')}
+          description={t('settings.theme.description')}
+        >
+          <ToggleOptions
+            value={theme}
+            onChange={handleThemeChange}
+            options={[
+              { value: 'light', label: t('settings.theme.light') },
+              { value: 'dark', label: t('settings.theme.dark') },
+              { value: 'system', label: t('settings.theme.system') },
+            ]}
+          />
+        </SettingsRow>
+
+        {/* Run on Startup */}
+        <SettingsRow
+          title={t('settings.general.runOnStartup')}
+          description={t('settings.general.runOnStartup.description')}
+        >
+          <Switch
+            checked={runOnStartup}
+            onCheckedChange={handleRunOnStartupChange}
+          />
+        </SettingsRow>
+
+        {/* Multi-Project Support */}
+        <SettingsRow
+          title={t('settings.general.multiProjectSupport')}
+          description={t('settings.general.multiProjectSupport.description')}
+        >
+          <Switch
+            checked={multiProjectSupport}
+            onCheckedChange={setMultiProjectSupport}
+          />
+        </SettingsRow>
+
+        {/* Terminal Font Size */}
+        <SettingsRow
+          title={t('settings.general.terminalFontSize')}
+          description={t('settings.general.terminalFontSize.description')}
+        >
+          <Input
+            type="number"
+            min={8}
+            max={32}
+            value={terminalFontSize}
+            onChange={(e) => setTerminalFontSize(Number(e.target.value))}
+            className="w-20"
+          />
+        </SettingsRow>
+
+        {/* Terminal Font */}
+        <SettingsRow
+          title={t('settings.general.terminalFont')}
+          description={t('settings.general.terminalFont.description')}
+        >
+          <Input
+            type="text"
+            value={terminalFont}
+            onChange={(e) => setTerminalFont(e.target.value)}
+            placeholder={t('settings.general.terminalFont.default')}
+            className="w-40"
+          />
+        </SettingsRow>
+
+        {/* Developer Mode */}
+        <SettingsRow
+          title={t('settings.general.developerMode')}
+          description={t('settings.general.developerMode.description')}
+        >
+          <Switch checked={developerMode} onCheckedChange={setDeveloperMode} />
+        </SettingsRow>
+      </div>
+    </div>
+  );
+};

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { INPUT_DEBOUNCE_MS } from '../constants';
+import { logger } from '../lib/logger';
 import {
   defaultSessionInputState,
   getInputMode,
@@ -14,39 +16,113 @@ export interface InputState {
   mode: InputMode;
 }
 
-const DEBOUNCE_MS = 150;
+const EMPTY_HISTORY: string[] = [];
 
 export function useInputState(
   sessionId: string | null,
   workspaceId: string | null,
 ) {
-  const {
-    getSessionInput,
-    setSessionInput,
-    resetSessionInput,
-    addToWorkspaceHistory,
-    getWorkspaceHistory,
-  } = useStore();
+  const setSessionInput = useStore((state) => state.setSessionInput);
+  const resetSessionInput = useStore((state) => state.resetSessionInput);
+  const addToWorkspaceHistory = useStore(
+    (state) => state.addToWorkspaceHistory,
+  );
 
-  const sessionInput = sessionId
-    ? getSessionInput(sessionId)
-    : defaultSessionInputState;
-  const history = workspaceId ? getWorkspaceHistory(workspaceId) : [];
+  const inputSessionId = sessionId ?? '__draft__';
+  const sessionInput = useStore(
+    (state) => state.inputBySession[inputSessionId] ?? defaultSessionInputState,
+  );
+  const history = useStore((state) =>
+    workspaceId
+      ? (state.historyByWorkspace[workspaceId] ?? EMPTY_HISTORY)
+      : EMPTY_HISTORY,
+  );
 
   const [localValue, setLocalValue] = useState(sessionInput.value);
   const [localCursorPosition, setLocalCursorPosition] = useState(
     sessionInput.cursorPosition,
   );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingChangesRef = useRef<
+    Partial<{ value: string; cursorPosition: number }>
+  >({});
   const prevSessionIdRef = useRef<string | null>(sessionId);
+  const prevForceUpdateKeyRef = useRef<number>(sessionInput.forceUpdateKey);
 
+  // Sync from store when sessionId changes
   useEffect(() => {
     if (prevSessionIdRef.current !== sessionId) {
       setLocalValue(sessionInput.value);
       setLocalCursorPosition(sessionInput.cursorPosition);
       prevSessionIdRef.current = sessionId;
+      prevForceUpdateKeyRef.current = sessionInput.forceUpdateKey;
     }
-  }, [sessionId, sessionInput.value, sessionInput.cursorPosition]);
+  }, [
+    sessionId,
+    sessionInput.value,
+    sessionInput.cursorPosition,
+    sessionInput.forceUpdateKey,
+  ]);
+
+  // Sync from store when forceUpdateKey changes (external update like fork)
+  useEffect(() => {
+    if (prevForceUpdateKeyRef.current !== sessionInput.forceUpdateKey) {
+      logger.debug(
+        '[HOOK]',
+        'forceUpdateKey changed, syncing input value from store',
+      );
+      setLocalValue(sessionInput.value);
+      setLocalCursorPosition(sessionInput.cursorPosition);
+      prevForceUpdateKeyRef.current = sessionInput.forceUpdateKey;
+    }
+  }, [
+    sessionInput.forceUpdateKey,
+    sessionInput.value,
+    sessionInput.cursorPosition,
+  ]);
+
+  // Listen for external text insertion (e.g., "Add to chat" from file tree)
+  // Uses refs to always have fresh local state without re-subscribing
+  const localValueRef = useRef(localValue);
+  const localCursorPositionRef = useRef(localCursorPosition);
+  useEffect(() => {
+    localValueRef.current = localValue;
+    localCursorPositionRef.current = localCursorPosition;
+  }, [localValue, localCursorPosition]);
+
+  useEffect(() => {
+    const handleInsertText = (e: Event) => {
+      const { text } = (e as CustomEvent<{ text: string }>).detail;
+      const currentValue = localValueRef.current;
+      const cursorPos = localCursorPositionRef.current;
+
+      const before = currentValue.slice(0, cursorPos);
+      const after = currentValue.slice(cursorPos);
+      const newValue = `${before}${text}${after}`;
+      const newCursorPos = before.length + text.length;
+
+      setLocalValue(newValue);
+      setLocalCursorPosition(newCursorPos);
+
+      // Flush to store immediately (skip debounce)
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+      pendingChangesRef.current = {};
+      setSessionInput(inputSessionId, {
+        value: newValue,
+        cursorPosition: newCursorPos,
+      });
+
+      // Focus the chat input
+      window.dispatchEvent(new Event('chat-input:focus'));
+    };
+
+    window.addEventListener('chat-input:insert-text', handleInsertText);
+    return () => {
+      window.removeEventListener('chat-input:insert-text', handleInsertText);
+    };
+  }, [inputSessionId, setSessionInput]);
 
   useEffect(() => {
     return () => {
@@ -62,34 +138,45 @@ export function useInputState(
     mode: getInputMode(localValue),
   };
 
+  const flushPendingChanges = useCallback(() => {
+    if (sessionId && Object.keys(pendingChangesRef.current).length > 0) {
+      setSessionInput(sessionId, pendingChangesRef.current);
+      pendingChangesRef.current = {};
+    }
+  }, [sessionId, setSessionInput]);
+
   const setValue = useCallback(
     (newValue: string) => {
       setLocalValue(newValue);
       if (sessionId) {
+        pendingChangesRef.current.value = newValue;
         if (debounceRef.current) {
           clearTimeout(debounceRef.current);
         }
-        debounceRef.current = setTimeout(() => {
-          setSessionInput(sessionId, { value: newValue });
-        }, DEBOUNCE_MS);
+        debounceRef.current = setTimeout(
+          flushPendingChanges,
+          INPUT_DEBOUNCE_MS,
+        );
       }
     },
-    [sessionId, setSessionInput],
+    [sessionId, flushPendingChanges],
   );
 
   const setCursorPosition = useCallback(
     (pos: number) => {
       setLocalCursorPosition(pos);
       if (sessionId) {
+        pendingChangesRef.current.cursorPosition = pos;
         if (debounceRef.current) {
           clearTimeout(debounceRef.current);
         }
-        debounceRef.current = setTimeout(() => {
-          setSessionInput(sessionId, { cursorPosition: pos });
-        }, DEBOUNCE_MS);
+        debounceRef.current = setTimeout(
+          flushPendingChanges,
+          INPUT_DEBOUNCE_MS,
+        );
       }
     },
-    [sessionId, setSessionInput],
+    [sessionId, flushPendingChanges],
   );
 
   const reset = useCallback(() => {
@@ -97,6 +184,7 @@ export function useInputState(
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
       }
+      pendingChangesRef.current = {};
       setLocalValue('');
       setLocalCursorPosition(0);
       resetSessionInput(sessionId);
@@ -138,49 +226,56 @@ export function useInputState(
   const planMode = sessionInput.planMode;
   const thinking = sessionInput.thinking;
   const thinkingEnabled = sessionInput.thinkingEnabled;
+  const thinkingVariants = sessionInput.thinkingVariants;
 
   const togglePlanMode = useCallback(() => {
-    if (sessionId) {
-      const newMode: PlanMode =
-        planMode === 'normal'
-          ? 'plan'
-          : planMode === 'plan'
-            ? 'brainstorm'
-            : 'normal';
-      setSessionInput(sessionId, { planMode: newMode });
-    }
-  }, [sessionId, planMode, setSessionInput]);
+    const newMode: PlanMode =
+      planMode === 'normal'
+        ? 'plan'
+        : planMode === 'plan'
+          ? 'brainstorm'
+          : 'normal';
+    setSessionInput(inputSessionId, { planMode: newMode });
+  }, [inputSessionId, planMode, setSessionInput]);
 
   const toggleThinking = useCallback(() => {
-    if (sessionId && thinkingEnabled) {
+    if (thinkingEnabled && thinkingVariants.length > 0) {
+      const currentIndex =
+        thinking === null ? -1 : thinkingVariants.indexOf(thinking);
+      const nextIndex = currentIndex + 1;
       const newThinking: ThinkingLevel =
-        thinking === null
-          ? 'low'
-          : thinking === 'low'
-            ? 'medium'
-            : thinking === 'medium'
-              ? 'high'
-              : null;
-      setSessionInput(sessionId, { thinking: newThinking });
+        nextIndex >= thinkingVariants.length
+          ? null
+          : thinkingVariants[nextIndex];
+      setSessionInput(inputSessionId, { thinking: newThinking });
     }
-  }, [sessionId, thinking, thinkingEnabled, setSessionInput]);
+  }, [
+    inputSessionId,
+    thinking,
+    thinkingEnabled,
+    thinkingVariants,
+    setSessionInput,
+  ]);
 
   const setThinkingEnabled = useCallback(
     (enabled: boolean) => {
-      if (sessionId) {
-        setSessionInput(sessionId, { thinkingEnabled: enabled });
-      }
+      setSessionInput(inputSessionId, { thinkingEnabled: enabled });
     },
-    [sessionId, setSessionInput],
+    [inputSessionId, setSessionInput],
   );
 
   const setThinking = useCallback(
     (level: ThinkingLevel) => {
-      if (sessionId) {
-        setSessionInput(sessionId, { thinking: level });
-      }
+      setSessionInput(inputSessionId, { thinking: level });
     },
-    [sessionId, setSessionInput],
+    [inputSessionId, setSessionInput],
+  );
+
+  const setThinkingVariants = useCallback(
+    (variants: string[]) => {
+      setSessionInput(inputSessionId, { thinkingVariants: variants });
+    },
+    [inputSessionId, setSessionInput],
   );
 
   // Pasted text and image maps
@@ -221,10 +316,12 @@ export function useInputState(
     planMode,
     thinking,
     thinkingEnabled,
+    thinkingVariants,
     togglePlanMode,
     toggleThinking,
     setThinkingEnabled,
     setThinking,
+    setThinkingVariants,
     // Pasted maps
     pastedTextMap,
     pastedImageMap,

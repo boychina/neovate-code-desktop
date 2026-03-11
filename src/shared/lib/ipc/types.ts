@@ -42,24 +42,17 @@ export type CreateMainHandlerFn = <TInput = void, TOutput = unknown>(
 ) => { handler: MainHandler<TInput, TOutput> };
 
 // Type inference utilities
-type InferMainHandlerInput<T> = T extends MainHandler<infer TInput, any>
-  ? TInput
-  : never;
+type InferMainHandlerInput<T> =
+  T extends MainHandler<infer TInput, any> ? TInput : never;
 
-type InferMainHandlerOutput<T> = T extends MainHandler<any, infer TOutput>
-  ? TOutput
-  : never;
+type InferMainHandlerOutput<T> =
+  T extends MainHandler<any, infer TOutput> ? TOutput : never;
 
-type InferRendererHandlerInput<T> = T extends RendererHandler<infer TInput, any>
-  ? TInput
-  : never;
+type InferRendererHandlerInput<T> =
+  T extends RendererHandler<infer TInput, any> ? TInput : never;
 
-type InferRendererHandlerOutput<T> = T extends RendererHandler<
-  any[],
-  infer TOutput
->
-  ? TOutput
-  : never;
+type InferRendererHandlerOutput<T> =
+  T extends RendererHandler<any[], infer TOutput> ? TOutput : never;
 
 // Caller types for main process
 export type CreateMainCaller<TMainHandlers extends MainHandlers> = {
@@ -106,4 +99,22 @@ export type RendererHandlersListener<T extends RendererHandlers> = {
       handle: (handler: T[Namespace][Method]) => () => void;
     };
   };
+};
+
+// exposeAsMainHandlers utility types
+
+/** Generic function type */
+export type AnyFunction = (...args: any[]) => any;
+
+/** Converts method types to MainHandler wrapper objects */
+export type MainHandlersOf<T> = {
+  [K in keyof T]: T[K] extends AnyFunction
+    ? {
+        handler: MainHandler<
+          // Extract just the 'input' field, not the whole { context, input } object
+          Parameters<T[K]>[0] extends { input: infer I } ? I : void,
+          Awaited<ReturnType<T[K]>>
+        >;
+      }
+    : never;
 };

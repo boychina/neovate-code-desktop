@@ -1,12 +1,13 @@
-import { FileIcon, CodeIcon, FolderIcon } from '@hugeicons/core-free-icons';
+import { CodeIcon, FileIcon, FolderIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ScrollArea } from '../ui';
+import { useEffect, useRef } from 'react';
 
 interface SuggestionDropdownProps {
   type: 'file' | 'slash';
   items: (string | { name: string; description: string })[];
   selectedIndex: number;
-  maxVisible?: number;
+  onHover?: (index: number) => void;
+  onSelect?: (index: number) => void;
 }
 
 function parseFilePath(path: string): { fileName: string; dirPath: string } {
@@ -28,32 +29,23 @@ export function SuggestionDropdown({
   type,
   items,
   selectedIndex,
-  maxVisible = 10,
+  onHover,
+  onSelect,
 }: SuggestionDropdownProps) {
+  const activeRef = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex]);
+
   if (items.length === 0) return null;
 
-  const startIndex = Math.max(
-    0,
-    Math.min(
-      selectedIndex - Math.floor(maxVisible / 2),
-      items.length - maxVisible,
-    ),
-  );
-  const visibleItems = items.slice(startIndex, startIndex + maxVisible);
-
   return (
-    <div
-      className="absolute bottom-full left-0 mb-1 w-full max-w-lg rounded-lg shadow-lg overflow-hidden z-50"
-      style={{
-        backgroundColor: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-      }}
-    >
-      <ScrollArea className="max-h-64">
+    <div className="absolute bottom-full left-0 mb-1 w-full max-w-lg rounded-lg shadow-lg overflow-hidden z-50 bg-background border border-border flex flex-col max-h-72">
+      <div className="flex-1 min-h-0 overflow-y-auto thin-scrollbar">
         <ul className="py-1">
-          {visibleItems.map((item, index) => {
-            const actualIndex = startIndex + index;
-            const isSelected = actualIndex === selectedIndex;
+          {items.map((item, index) => {
+            const isSelected = index === selectedIndex;
 
             if (type === 'slash') {
               const name = typeof item === 'string' ? item : item.name;
@@ -62,30 +54,23 @@ export function SuggestionDropdown({
 
               return (
                 <li
-                  key={actualIndex}
-                  className="px-3 py-2 cursor-pointer flex items-center gap-2 transition-colors"
-                  style={{
-                    backgroundColor: isSelected
-                      ? 'var(--bg-active)'
-                      : 'transparent',
-                  }}
+                  key={index}
+                  ref={isSelected ? activeRef : undefined}
+                  className={`px-3 py-2 cursor-pointer flex items-center gap-2 transition-colors ${isSelected ? 'bg-accent' : 'bg-transparent'}`}
+                  onMouseEnter={() => onHover?.(index)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onSelect?.(index)}
                 >
                   <HugeiconsIcon
                     icon={CodeIcon}
                     size={16}
-                    color="var(--text-secondary)"
+                    className="text-muted-foreground"
                   />
-                  <span
-                    className="font-mono text-sm flex-1"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
+                  <span className="font-mono text-sm flex-1 text-foreground">
                     /{name}
                   </span>
                   {description && (
-                    <span
-                      className="text-xs truncate max-w-[200px]"
-                      style={{ color: 'var(--text-tertiary)' }}
-                    >
+                    <span className="text-xs truncate max-w-[200px] text-muted-foreground">
                       {description}
                     </span>
                   )}
@@ -99,31 +84,23 @@ export function SuggestionDropdown({
 
             return (
               <li
-                key={actualIndex}
-                className="px-3 py-2 cursor-pointer flex items-center gap-2 transition-colors min-w-0"
-                style={{
-                  backgroundColor: isSelected
-                    ? 'var(--bg-active)'
-                    : 'transparent',
-                }}
+                key={index}
+                ref={isSelected ? activeRef : undefined}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 transition-colors min-w-0 ${isSelected ? 'bg-accent' : 'bg-transparent'}`}
+                onMouseEnter={() => onHover?.(index)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onSelect?.(index)}
               >
                 <HugeiconsIcon
                   icon={isDir ? FolderIcon : FileIcon}
                   size={16}
-                  color="var(--text-secondary)"
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 text-muted-foreground"
                 />
-                <span
-                  className="text-sm font-medium truncate"
-                  style={{ color: 'var(--text-primary)' }}
-                >
+                <span className="text-sm font-medium truncate text-foreground">
                   {fileName || fullPath}
                 </span>
                 {dirPath && (
-                  <span
-                    className="text-xs truncate flex-1 text-right"
-                    style={{ color: 'var(--text-tertiary)' }}
-                  >
+                  <span className="text-xs truncate flex-1 text-right text-muted-foreground">
                     {dirPath}
                   </span>
                 )}
@@ -131,26 +108,20 @@ export function SuggestionDropdown({
             );
           })}
         </ul>
-      </ScrollArea>
-      <div
-        className="px-3 py-1.5 text-xs border-t flex justify-between"
-        style={{
-          borderColor: 'var(--border-subtle)',
-          color: 'var(--text-tertiary)',
-        }}
-      >
+      </div>
+      <div className="px-3 py-1.5 text-xs border-t border-border bg-background text-muted-foreground sticky flex justify-between">
         <span>
-          <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
+          <kbd className="px-1.5 py-1 rounded bg-muted text-xs font-mono">
             ↑↓
           </kbd>{' '}
           navigate
         </span>
         <span>
-          <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
+          <kbd className="px-1.5 py-1 rounded bg-muted text-xs font-mono">
             Tab
           </kbd>{' '}
           or{' '}
-          <kbd className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">
+          <kbd className="px-1.5 py-1 rounded bg-muted text-xs font-mono">
             Enter
           </kbd>{' '}
           select

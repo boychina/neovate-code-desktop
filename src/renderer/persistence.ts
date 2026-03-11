@@ -1,5 +1,30 @@
 import type { StoreApi } from 'zustand';
 import { toastManager } from './components/ui/toast';
+import { PERSISTENCE_DEBOUNCE_MS } from './constants';
+import { DEFAULT_LOCALE, type Locales } from './core/i18n';
+import { DEFAULT_KEYBINDINGS } from './lib/keybindings';
+import { logger } from './lib/logger';
+import type { App } from './nodeBridge.types';
+import type {
+  KeybindingsConfig,
+  SendMessageWith,
+  ThemeValue,
+} from './store/slices/desktopSettings';
+import type {
+  SecondarySidebarTab,
+  SidebarOrganize,
+  SidebarSortBy,
+} from './store/slices/ui';
+import type { ContentTab } from './components/ContentPanel/types';
+
+// Settings active tab type
+type SettingsActiveTab =
+  | 'preferences'
+  | 'chat'
+  | 'appearance'
+  | 'providers'
+  | 'mcp'
+  | 'skills';
 
 // Define the persistable state shape
 interface PersistedState {
@@ -9,9 +34,33 @@ interface PersistedState {
   selectedWorkspaceId: string | null;
   selectedSessionId: string | null;
   sessions: Record<string, any>;
-  sidebarCollapsed: boolean;
   openRepoAccordions: string[];
   expandedSessionGroups: Record<string, boolean>;
+  pinnedSessions: string[];
+  // Settings state
+  showSettings: boolean;
+  settingsActiveTab: SettingsActiveTab;
+  // UISlice state
+  contentPanelTabs: {
+    tabsByRepo: Record<string, ContentTab[]>;
+    activeTabIdByRepo: Record<string, string | null>;
+  };
+  secondarySidebarTab: SecondarySidebarTab;
+  sidebarOrganize: SidebarOrganize;
+  sidebarSortBy: SidebarSortBy;
+  // Onboarding state
+  onboardingCompleted: boolean;
+  // DesktopSettings state
+  theme: ThemeValue;
+  sendMessageWith: SendMessageWith;
+  terminalFontSize: number;
+  terminalFont: string;
+  developerMode: boolean;
+  keybindings: KeybindingsConfig;
+  runOnStartup: boolean;
+  locale: Locales;
+  multiProjectSupport: boolean;
+  defaultOpenApp: App | null;
 }
 
 // Debounce helper
@@ -63,9 +112,33 @@ export function setupPersistence(store: StoreApi<any>): void {
       selectedWorkspaceId: state.selectedWorkspaceId || null,
       selectedSessionId: state.selectedSessionId || null,
       sessions: state.sessions || {},
-      sidebarCollapsed: state.sidebarCollapsed || false,
       openRepoAccordions: state.openRepoAccordions || [],
       expandedSessionGroups: state.expandedSessionGroups || {},
+      pinnedSessions: state.pinnedSessions || [],
+      // Settings state
+      showSettings: state.showSettings ?? false,
+      settingsActiveTab: state.settingsActiveTab ?? 'preferences',
+      // UISlice state
+      contentPanelTabs: {
+        tabsByRepo: state.contentPanelTabs?.tabsByRepo ?? {},
+        activeTabIdByRepo: state.contentPanelTabs?.activeTabIdByRepo ?? {},
+      },
+      secondarySidebarTab: state.secondarySidebarTab ?? 'files',
+      sidebarOrganize: state.sidebarOrganize ?? 'byProject',
+      sidebarSortBy: state.sidebarSortBy ?? 'updated',
+      // Onboarding state
+      onboardingCompleted: state.onboardingCompleted ?? false,
+      // DesktopSettings state
+      theme: state.theme ?? 'system',
+      sendMessageWith: state.sendMessageWith ?? 'enter',
+      terminalFontSize: state.terminalFontSize ?? 12,
+      terminalFont: state.terminalFont ?? '',
+      developerMode: state.developerMode ?? false,
+      keybindings: state.keybindings ?? { ...DEFAULT_KEYBINDINGS },
+      runOnStartup: state.runOnStartup ?? false,
+      locale: state.locale ?? DEFAULT_LOCALE,
+      multiProjectSupport: state.multiProjectSupport ?? true,
+      defaultOpenApp: state.defaultOpenApp ?? null,
     };
   };
 
@@ -73,7 +146,6 @@ export function setupPersistence(store: StoreApi<any>): void {
   const debouncedSave = debounce(async () => {
     try {
       const persistableState = getPersistableState();
-      // @ts-ignore
       await window.electron.saveStore(persistableState);
     } catch (error) {
       console.error('Failed to save store:', error);
@@ -83,7 +155,7 @@ export function setupPersistence(store: StoreApi<any>): void {
         description: (error as Error).message,
       });
     }
-  }, 500);
+  }, PERSISTENCE_DEBOUNCE_MS);
 
   // Subscribe to store changes
   store.subscribe(() => {
@@ -103,7 +175,6 @@ export function setupPersistence(store: StoreApi<any>): void {
  */
 export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
   try {
-    // @ts-ignore
     const persistedState = await window.electron.loadStore();
 
     // No persisted state - fresh start
@@ -119,15 +190,36 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
       selectedWorkspaceId = null,
       selectedSessionId = null,
       sessions = {},
-      sidebarCollapsed = false,
       openRepoAccordions = [],
       expandedSessionGroups = {},
+      pinnedSessions = [],
+      // Settings state
+      showSettings = false,
+      settingsActiveTab = 'preferences',
+      // UISlice state
+      contentPanelTabs = { tabsByRepo: {}, activeTabIdByRepo: {} },
+      secondarySidebarTab = 'files',
+      sidebarOrganize = 'byProject',
+      sidebarSortBy = 'updated',
+      // Onboarding state
+      onboardingCompleted = false,
+      // DesktopSettings state
+      theme = 'system',
+      sendMessageWith = 'enter',
+      terminalFontSize = 12,
+      terminalFont = '',
+      developerMode = false,
+      keybindings = { ...DEFAULT_KEYBINDINGS },
+      runOnStartup = false,
+      locale = DEFAULT_LOCALE,
+      multiProjectSupport = true,
+      defaultOpenApp = null,
     } = persistedState;
 
     // Validate selections exist in loaded entities
     let validatedRepoPath = selectedRepoPath;
     let validatedWorkspaceId = selectedWorkspaceId;
-    let validatedSessionId = selectedSessionId;
+    const validatedSessionId = selectedSessionId;
 
     // Check if selected repo exists
     if (validatedRepoPath && !repos[validatedRepoPath]) {
@@ -145,14 +237,6 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
       validatedWorkspaceId = null;
     }
 
-    // Check if selected session exists
-    // if (validatedSessionId && !sessions[validatedSessionId]) {
-    //   console.warn(
-    //     `Selected session ID ${validatedSessionId} not found in loaded sessions, resetting selection`,
-    //   );
-    //   validatedSessionId = null;
-    // }
-
     // Merge persisted state into store
     // Note: We explicitly DON'T set connection state or runtime objects
     store.setState(
@@ -160,9 +244,21 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
         repos,
         workspaces,
         sessions,
-        sidebarCollapsed,
         openRepoAccordions,
         expandedSessionGroups,
+        pinnedSessions,
+        // Settings state
+        showSettings,
+        settingsActiveTab,
+        // UISlice state - merge persisted data into contentPanelTabs namespace
+        contentPanelTabs: {
+          ...store.getState().contentPanelTabs,
+          tabsByRepo: contentPanelTabs.tabsByRepo,
+          activeTabIdByRepo: contentPanelTabs.activeTabIdByRepo,
+        },
+        secondarySidebarTab,
+        sidebarOrganize,
+        sidebarSortBy,
 
         selectedRepoPath: validatedRepoPath,
         selectedWorkspaceId: validatedWorkspaceId,
@@ -170,14 +266,36 @@ export async function hydrateStore(store: StoreApi<any>): Promise<boolean> {
         state: 'idle',
         transport: null,
         messageBus: null,
+
+        // Onboarding state
+        onboardingCompleted,
+        // Runtime state derived from persisted: show onboarding if not completed
+        onboardingVisible: !onboardingCompleted,
+        onboardingStep: 'import',
+        importedProjects: [],
+
+        // DesktopSettings state
+        theme,
+        sendMessageWith,
+        terminalFontSize,
+        terminalFont,
+        developerMode,
+        keybindings,
+        runOnStartup,
+        locale,
+        multiProjectSupport,
+        defaultOpenApp,
       },
       false,
     );
 
-    console.log('Store hydrated successfully from persisted state');
+    logger.info(
+      '[PERSIST]',
+      'Store hydrated successfully from persisted state',
+    );
     return true;
   } catch (error) {
-    console.error('Failed to hydrate store:', error);
+    logger.error('[PERSIST]', 'Failed to hydrate store:', error);
     return false;
   }
 }

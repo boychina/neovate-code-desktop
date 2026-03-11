@@ -25,6 +25,7 @@ export interface LegacyElectronAPI {
   selectDirectory: () => Promise<string | null>;
   rendererReady: () => void;
   quitApp: () => void;
+  openExternal: (url: string) => Promise<void>;
   // Terminal PTY events
   onTerminalData: (
     callback: (data: { ptyId: string; data: string }) => void,
@@ -36,6 +37,9 @@ export interface LegacyElectronAPI {
       signal?: number;
     }) => void,
   ) => () => void;
+  // Menu events
+  onMenuOpenSettings: (callback: () => void) => () => void;
+  onMenuToggleTheme: (callback: () => void) => () => void;
 }
 
 // Extend Window interface for type safety

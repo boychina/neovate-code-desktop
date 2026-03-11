@@ -1,12 +1,13 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useListNavigation } from './useListNavigation';
-import { useDebounce } from './useDebounce';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FILE_SEARCH_MAX_RESULTS, INPUT_DEBOUNCE_MS } from '../constants';
 import { findAtTokenAtCursor } from '../lib/tokenUtils';
 import type {
   HandlerInput,
   HandlerMethod,
   HandlerOutput,
 } from '../nodeBridge.types';
+import { useDebounce } from './useDebounce';
+import { useListNavigation } from './useListNavigation';
 
 type TriggerType = 'at' | 'tab' | null;
 
@@ -105,7 +106,7 @@ export function useFileSuggestion({
 
   const activeMatch = atMatch.hasQuery ? atMatch : tabMatch;
 
-  const debouncedQuery = useDebounce(activeMatch.query, 150);
+  const debouncedQuery = useDebounce(activeMatch.query, INPUT_DEBOUNCE_MS);
 
   useEffect(() => {
     if (activeMatch.query !== lastQueryRef.current) {
@@ -126,7 +127,7 @@ export function useFileSuggestion({
     request('utils.searchPaths', {
       cwd,
       query: debouncedQuery,
-      maxResults: 100,
+      maxResults: FILE_SEARCH_MAX_RESULTS,
     })
       .then((res) => {
         if (currentRequestId !== requestIdRef.current) return;
@@ -158,6 +159,7 @@ export function useFileSuggestion({
     matchedPaths,
     isLoading,
     selectedIndex: navigation.selectedIndex,
+    setSelectedIndex: navigation.setSelectedIndex,
     startIndex: activeMatch.startIndex,
     fullMatch: activeMatch.fullMatch,
     triggerType: activeMatch.triggerType,

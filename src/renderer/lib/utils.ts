@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from 'clsx';
+import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
@@ -54,4 +54,11 @@ export function setNestedValue(
 
   current[keys[keys.length - 1]] = value;
   return result;
+}
+
+/**
+ * Generate a unique tab ID.
+ */
+export function generateTabId(): string {
+  return `tab-${crypto.randomUUID().slice(0, 8)}`;
 }

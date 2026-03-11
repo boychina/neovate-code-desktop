@@ -8,6 +8,7 @@
 // import type { ApprovalMode, McpServerConfig } from './config';
 // import type { ResponseFormat, ThinkingConfig } from './loop';
 // import type { ImagePart, Message, NormalizedMessage } from './message';
+// import type { ModelInfo, ProvidersMap } from './provider/model';
 // import type { ApprovalCategory, ToolUse } from './tool';
 
 type ApprovalMode = any;
@@ -17,8 +18,6 @@ type ThinkingConfig = any;
 type ImagePart = any;
 type Message = any;
 type NormalizedMessage = any;
-type ApprovalCategory = any;
-type ToolUse = any;
 type Provider = Record<string, any>;
 type ModelInfo = {
   provider: Provider;
@@ -27,16 +26,18 @@ type ModelInfo = {
   _mCreator: () => Promise<any>;
 };
 type ProvidersMap = Record<string, Provider>;
+type ApprovalCategory = any;
+type ToolUse = any;
 
 // ============================================================================
 // Common Response Types
 // ============================================================================
 
 /** Standard success response without data */
-type SuccessResponse = { success: boolean };
+type SuccessResponse = { success: true };
 
 /** Standard error response */
-type ErrorResponse = { success: boolean; error: string };
+type ErrorResponse = { success: false; error: string };
 
 // ============================================================================
 // Config Handlers
@@ -56,7 +57,7 @@ type ConfigSetInput = {
   cwd: string;
   isGlobal: boolean;
   key: string;
-  value: string;
+  value: any;
 };
 
 type ConfigRemoveInput = {
@@ -76,6 +77,123 @@ type ConfigListOutput = {
     projectConfigDir: string;
     config: any;
   };
+};
+
+// ============================================================================
+// GlobalData Handlers
+// ============================================================================
+
+type GlobalDataRecentModelsGetInput = {
+  cwd: string;
+};
+type GlobalDataRecentModelsGetOutput = {
+  success: boolean;
+  data: {
+    recentModels: string[];
+    thinkingLevel: string | undefined;
+  };
+};
+
+type GlobalDataRecentModelsAddInput = {
+  cwd: string;
+  model: string;
+};
+
+// ============================================================================
+// Git Handlers
+// ============================================================================
+
+type GitCloneInput = {
+  url: string;
+  destination: string;
+  taskId?: string;
+  // TODO: Future enhancement - HTTPS authentication with username/password
+  // Currently only supports:
+  // 1. Public HTTPS repos (no auth needed)
+  // 2. SSH repos with pre-configured keys
+  // Future: Add these fields when implementing HTTPS auth
+  // username?: string;
+  // password?: string;
+};
+type GitCloneOutput = {
+  success: boolean;
+  data?: {
+    clonePath: string;
+    repoName: string;
+  };
+  error?: string;
+  errorCode?: string;
+  needsCredentials?: boolean;
+};
+
+type GitStatusInput = {
+  cwd: string;
+};
+type GitStatusOutput = {
+  success: boolean;
+  data?: {
+    isRepo: boolean;
+    hasUncommittedChanges: boolean;
+    hasStagedChanges: boolean;
+    isGitInstalled: boolean;
+    isUserConfigured: { name: boolean; email: boolean };
+    isMerging: boolean;
+    unstagedFiles: Array<{ status: string; file: string }>;
+  };
+  error?: string;
+};
+
+type GitStageInput = {
+  cwd: string;
+  all?: boolean;
+};
+
+type GitCommitInput = {
+  cwd: string;
+  message: string;
+  noVerify?: boolean;
+};
+
+type GitPushInput = {
+  cwd: string;
+};
+
+type GitCreateBranchInput = {
+  cwd: string;
+  name: string;
+};
+type GitCreateBranchOutput = {
+  success: boolean;
+  data?: {
+    branchName: string;
+    wasRenamed: boolean;
+  };
+  error?: string;
+};
+
+type GitDetectGitHubInput = {
+  cwd: string;
+};
+type GitDetectGitHubOutput = {
+  success: boolean;
+  data?: {
+    hasGhCli: boolean;
+    isGitHubRemote: boolean;
+  };
+  error?: string;
+};
+
+type GitCreatePRInput = {
+  cwd: string;
+  branchName: string;
+  body?: string;
+};
+type GitCreatePROutput = {
+  success: boolean;
+  data?: {
+    prUrl: string;
+  };
+  error?: string;
 };
 
 // ============================================================================
@@ -160,6 +278,7 @@ type ModelsListOutput = {
     groupedModels: Array<{
       provider: string;
       providerId: string;
+      isActive: boolean;
       models: Array<{
         name: string;
         modelId: string;
@@ -173,8 +292,58 @@ type ModelsListOutput = {
       modelId: string;
       modelContextLimit: number;
     } | null;
+    nullModels: Array<{
+      providerId: string;
+      modelId: string;
+    }>;
+    recentModels: string[];
+    thinkingLevel: string | undefined;
   };
 };
+
+type ModelsTestInput = {
+  cwd?: string;
+  model: string;
+  timeout?: number; // Default 15000ms (15 seconds)
+  prompt?: string; // Default 'hi'
+};
+type ModelsTestOutput =
+  | {
+      success: true;
+      data: {
+        model: string;
+        provider: string;
+        modelName: string;
+        prompt: string;
+        response: string;
+        responseTime: number; // in milliseconds
+        usage: {
+          input_tokens: number;
+          output_tokens: number;
+        } | null;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type ModelsGetVariantsInput = {
+  cwd?: string;
+  model: string;
+};
+type ModelsGetVariantsOutput =
+  | {
+      success: true;
+      data: {
+        model: string;
+        variants: Record<string, any>;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
 
 // ============================================================================
 // Output Styles Handlers
@@ -245,12 +414,12 @@ type ProjectGetRepoInfoOutput = {
         lastAccessed: number;
         settings: any;
       };
-      gitRemote: {
+      gitRemote?: {
         originUrl: string | null;
         defaultBranch: string | null;
-        syncStatus: any;
       };
     };
+    timings?: Record<string, number>;
   };
 };
 
@@ -259,6 +428,7 @@ type WorkspaceData = {
   repoPath: string;
   branch: string;
   worktreePath: string;
+  globalProjectDir: string;
   sessionIds: string[];
   gitState: {
     currentCommit: string;
@@ -345,6 +515,50 @@ type ProjectWorkspacesCreateGithubPROutput = {
   data?: { prUrl: string; prNumber: number };
 };
 
+type ProjectGenerateCommitInput = {
+  cwd: string;
+  language?: string; // defaults to 'English'
+  systemPrompt?: string; // custom system prompt override
+  model?: string; // passed to quickQuery
+  diff?: string; // git diff, fetched if not provided
+  fileList?: string; // staged file list, fetched if not provided
+};
+
+type ProjectGenerateCommitOutput = {
+  success: boolean;
+  error?: string;
+  data?: {
+    commitMessage: string;
+    branchName: string;
+    isBreakingChange: boolean;
+    summary: string;
+  };
+};
+
+type ProjectsListInput = {
+  cwd: string;
+  includeSessionDetails?: boolean;
+};
+
+type ProjectsListOutput = {
+  success: boolean;
+  error?: string;
+  data?: {
+    projects: Array<{
+      path: string;
+      lastAccessed: number | null;
+      sessionCount: number;
+      sessions?: Array<{
+        sessionId: string;
+        modified: Date;
+        created: Date;
+        messageCount: number;
+        summary: string;
+      }>;
+    }>;
+  };
+};
+
 // ============================================================================
 // Providers Handlers
 // ============================================================================
@@ -361,11 +575,77 @@ type ProvidersListOutput = {
       doc?: string;
       env?: string[];
       apiEnv?: string[];
+      api?: string;
+      apiFormat?: 'anthropic' | 'openai' | 'responses';
+      source?: 'built-in' | string;
+      options?: {
+        baseURL?: string;
+        apiKey?: string;
+        headers?: Record<string, string>;
+        httpProxy?: string;
+      };
       validEnvs: string[];
       hasApiKey: boolean;
+      maskedApiKey?: string;
+      apiKeyOrigin?: 'env' | 'config';
+      apiKeyEnvName?: string;
+      oauthUser?: string;
     }>;
   };
 };
+
+type ProvidersLoginInitOAuthInput = {
+  cwd: string;
+  providerId: 'github-copilot' | 'qwen' | 'codex';
+  timeout?: number;
+};
+type ProvidersLoginInitOAuthOutput =
+  | {
+      success: true;
+      data: {
+        authUrl: string;
+        userCode?: string;
+        oauthSessionId: string;
+      };
+    }
+  | { success: false; error: string };
+
+type ProvidersLoginCompleteOAuthInput = {
+  cwd: string;
+  providerId: 'github-copilot' | 'qwen' | 'codex';
+  oauthSessionId: string;
+  code: string;
+};
+type ProvidersLoginCompleteOAuthOutput =
+  | {
+      success: true;
+      data: { user?: string };
+    }
+  | { success: false; error: string };
+
+type ProvidersLoginStatusInput = {
+  cwd: string;
+  providerId: string;
+};
+type ProvidersLoginStatusOutput = {
+  success: true;
+  data: { isLoggedIn: boolean; user?: string };
+};
+
+type ProvidersLoginPollOAuthInput = {
+  cwd: string;
+  oauthSessionId: string;
+};
+type ProvidersLoginPollOAuthOutput =
+  | {
+      success: true;
+      data: {
+        status: 'pending' | 'completed' | 'error';
+        user?: string;
+        error?: string;
+      };
+    }
+  | { success: false; error: string };
 
 // ============================================================================
 // Session Handlers
@@ -390,6 +670,7 @@ type SessionInitializeOutput = {
     sessionSummary: string | undefined;
     pastedTextMap: Record<string, string>;
     pastedImageMap: Record<string, string>;
+    thinkingLevel: string | undefined;
   };
 };
 
@@ -403,6 +684,23 @@ type SessionMessagesListOutput = {
     messages: NormalizedMessage[];
   };
 };
+
+type SessionExportSessionMarkdownInput = {
+  cwd: string;
+  sessionId: string | undefined;
+};
+
+type SessionExportSessionMarkdownOutput =
+  | {
+      success: true;
+      data: {
+        filePath: string;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
 
 type SessionGetModelInput = {
   cwd: string;
@@ -543,6 +841,16 @@ type SessionConfigRemoveInput = {
   key: string;
 };
 
+type SessionsRemoveInput = {
+  cwd: string;
+  sessionId: string;
+};
+
+type SessionsRemoveOutput = {
+  success: boolean;
+  error?: string;
+};
+
 // ============================================================================
 // Sessions Handlers
 // ============================================================================
@@ -574,6 +882,147 @@ type SessionsResumeOutput = {
     logFile: string;
   };
 };
+
+// ============================================================================
+// Skills Handlers
+// ============================================================================
+
+/** Skill source types */
+type SkillSourceType =
+  | 'plugin'
+  | 'config'
+  | 'global-claude'
+  | 'global'
+  | 'project-claude'
+  | 'project';
+
+type SkillsListInput = {
+  cwd: string;
+};
+type SkillsListOutput = {
+  success: boolean;
+  data: {
+    skills: Array<{
+      name: string;
+      description: string;
+      path: string;
+      source: SkillSourceType;
+    }>;
+    errors: Array<{ path: string; message: string }>;
+  };
+};
+
+type SkillsGetInput = {
+  cwd: string;
+  name: string;
+};
+type SkillsGetOutput =
+  | {
+      success: true;
+      data: {
+        skill: {
+          name: string;
+          description: string;
+          path: string;
+          source: SkillSourceType;
+          body: string;
+        };
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type SkillsAddInput = {
+  cwd: string;
+  source: string;
+  global?: boolean;
+  claude?: boolean;
+  overwrite?: boolean;
+  name?: string;
+  targetDir?: string;
+};
+type SkillsAddOutput =
+  | {
+      success: true;
+      data: {
+        installed: Array<{
+          name: string;
+          description: string;
+          path: string;
+          source: SkillSourceType;
+        }>;
+        skipped: Array<{ name: string; reason: string }>;
+        errors: Array<{ path: string; message: string }>;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type SkillsRemoveInput = {
+  cwd: string;
+  name: string;
+  targetDir?: string;
+};
+type SkillsRemoveOutput = {
+  success: boolean;
+  error?: string;
+};
+
+type SkillsPreviewInput = {
+  cwd: string;
+  source: string;
+};
+type SkillsPreviewOutput =
+  | {
+      success: true;
+      data: {
+        previewId: string;
+        skills: Array<{
+          name: string;
+          description: string;
+          skillPath: string;
+        }>;
+        errors: Array<{ path: string; message: string }>;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type SkillsInstallInput = {
+  cwd: string;
+  previewId: string;
+  selectedSkills: string[];
+  source: string;
+  global?: boolean;
+  claude?: boolean;
+  overwrite?: boolean;
+  name?: string;
+  targetDir?: string;
+};
+type SkillsInstallOutput =
+  | {
+      success: true;
+      data: {
+        installed: Array<{
+          name: string;
+          description: string;
+          path: string;
+          source: SkillSourceType;
+        }>;
+        skipped: Array<{ name: string; reason: string }>;
+        errors: Array<{ path: string; message: string }>;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
 
 // ============================================================================
 // Slash Command Handlers
@@ -728,7 +1177,8 @@ export type App =
   | 'terminal'
   | 'antigravity'
   | 'finder'
-  | 'sourcetree';
+  | 'sourcetree'
+  | 'fork';
 
 type UtilsOpenInput = {
   cwd: string;
@@ -748,6 +1198,147 @@ type UtilsDetectAppsOutput = {
   };
 };
 
+type UtilsPlaySoundInput = {
+  sound: string; // Sound name (e.g., 'Glass', 'Hero') or preset ('success', 'error', 'warning', 'info', 'done')
+  volume?: number; // Volume level 0.0 to 1.0, defaults to 1.0
+};
+
+type UtilsPlaySoundOutput = SuccessResponse | ErrorResponse;
+
+type UtilsNotifyInput = {
+  cwd: string;
+  config: string | false | undefined;
+};
+
+type UtilsNotifyOutput = SuccessResponse;
+
+// ============================================================================
+// Snapshot Handlers
+// ============================================================================
+
+type SnapshotPreview = {
+  messageId: string;
+  timestamp: Date;
+  fileCount: number;
+  changes?: {
+    insertions: number;
+    deletions: number;
+    filesChanged: number;
+  };
+};
+
+type FileDiff = {
+  path: string;
+  oldContent: string;
+  newContent: string;
+};
+
+type RewindResult = {
+  success: boolean;
+  error?: string;
+  filesChanged: string[];
+  insertions: number;
+  deletions: number;
+  fileDiffs?: FileDiff[];
+};
+
+type SerializedSnapshot = {
+  messageId: string;
+  timestamp: string;
+  trackedFileBackups: Record<
+    string,
+    {
+      backupFileName: string | null;
+      version: number;
+      backupTime: string;
+    }
+  >;
+};
+
+type SnapshotTrackFileInput = {
+  cwd: string;
+  sessionId: string;
+  filePath: string; // Can be absolute or relative path
+  isNewFile?: boolean; // True if the file does not exist yet (will be created)
+};
+
+type SnapshotCreateInput = {
+  cwd: string;
+  sessionId: string;
+  messageId: string; // UUID of the message to associate with this snapshot
+  description?: string;
+};
+type SnapshotCreateOutput = {
+  success: boolean;
+  data: {
+    snapshot: SnapshotPreview | null;
+  };
+};
+
+type SnapshotListInput = {
+  cwd: string;
+  sessionId: string;
+};
+type SnapshotListOutput = {
+  success: boolean;
+  data: {
+    snapshots: SnapshotPreview[];
+  };
+};
+
+type SnapshotHasInput = {
+  cwd: string;
+  sessionId: string;
+  messageId: string;
+};
+type SnapshotHasOutput = {
+  success: boolean;
+  data: {
+    hasSnapshot: boolean;
+  };
+};
+
+type SnapshotRewindInput = {
+  cwd: string;
+  sessionId: string;
+  messageId: string;
+};
+type SnapshotRewindOutput =
+  | {
+      success: true;
+      data: {
+        result: RewindResult;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type SnapshotPreviewRewindInput = {
+  cwd: string;
+  sessionId: string;
+  messageId: string;
+  cumulative?: boolean;
+};
+type SnapshotPreviewRewindOutput =
+  | {
+      success: true;
+      data: {
+        result: RewindResult;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+    };
+
+type SnapshotLoadFromSessionInput = {
+  cwd: string;
+  sessionId: string;
+  snapshots: SerializedSnapshot[];
+};
+
 // ============================================================================
 // UI Bridge Handlers (from uiBridge.ts)
 // ============================================================================
@@ -755,11 +1346,13 @@ type UtilsDetectAppsOutput = {
 type ToolApprovalInput = {
   toolUse: ToolUse;
   category?: ApprovalCategory;
+  sessionId: string;
 };
 
 type ToolApprovalOutput = {
   approved: boolean;
   params?: Record<string, unknown>;
+  denyReason?: string;
 };
 
 // ============================================================================
@@ -771,11 +1364,47 @@ type ToolApprovalOutput = {
  * Maps handler method names to their input and output types.
  */
 export type HandlerMap = {
+  // GlobalData handlers
+  'globalData.recentModels.get': {
+    input: GlobalDataRecentModelsGetInput;
+    output: GlobalDataRecentModelsGetOutput;
+  };
+  'globalData.recentModels.add': {
+    input: GlobalDataRecentModelsAddInput;
+    output: SuccessResponse;
+  };
+
   // Config handlers
   'config.get': { input: ConfigGetInput; output: ConfigGetOutput };
   'config.set': { input: ConfigSetInput; output: SuccessResponse };
   'config.remove': { input: ConfigRemoveInput; output: SuccessResponse };
   'config.list': { input: ConfigListInput; output: ConfigListOutput };
+
+  // Git handlers
+  'git.clone': { input: GitCloneInput; output: GitCloneOutput };
+  'git.clone.cancel': { input: { taskId: string }; output: SuccessResponse };
+  'git.status': { input: GitStatusInput; output: GitStatusOutput };
+  'git.stage': {
+    input: GitStageInput;
+    output: SuccessResponse | ErrorResponse;
+  };
+  'git.commit': {
+    input: GitCommitInput;
+    output: SuccessResponse | ErrorResponse;
+  };
+  'git.push': { input: GitPushInput; output: SuccessResponse | ErrorResponse };
+  'git.createBranch': {
+    input: GitCreateBranchInput;
+    output: GitCreateBranchOutput;
+  };
+  'git.detectGitHub': {
+    input: GitDetectGitHubInput;
+    output: GitDetectGitHubOutput;
+  };
+  'git.createPR': {
+    input: GitCreatePRInput;
+    output: GitCreatePROutput;
+  };
 
   // MCP handlers
   'mcp.getStatus': { input: McpGetStatusInput; output: McpGetStatusOutput };
@@ -784,6 +1413,11 @@ export type HandlerMap = {
 
   // Models handlers
   'models.list': { input: ModelsListInput; output: ModelsListOutput };
+  'models.test': { input: ModelsTestInput; output: ModelsTestOutput };
+  'models.getVariants': {
+    input: ModelsGetVariantsInput;
+    output: ModelsGetVariantsOutput;
+  };
 
   // Output styles handlers
   'outputStyles.list': {
@@ -836,9 +1470,35 @@ export type HandlerMap = {
     input: ProjectWorkspacesCreateGithubPRInput;
     output: ProjectWorkspacesCreateGithubPROutput;
   };
+  'project.generateCommit': {
+    input: ProjectGenerateCommitInput;
+    output: ProjectGenerateCommitOutput;
+  };
+
+  // Projects handlers
+  'projects.list': {
+    input: ProjectsListInput;
+    output: ProjectsListOutput;
+  };
 
   // Providers handlers
   'providers.list': { input: ProvidersListInput; output: ProvidersListOutput };
+  'providers.login.initOAuth': {
+    input: ProvidersLoginInitOAuthInput;
+    output: ProvidersLoginInitOAuthOutput;
+  };
+  'providers.login.completeOAuth': {
+    input: ProvidersLoginCompleteOAuthInput;
+    output: ProvidersLoginCompleteOAuthOutput;
+  };
+  'providers.login.status': {
+    input: ProvidersLoginStatusInput;
+    output: ProvidersLoginStatusOutput;
+  };
+  'providers.login.pollOAuth': {
+    input: ProvidersLoginPollOAuthInput;
+    output: ProvidersLoginPollOAuthOutput;
+  };
 
   // Session handlers
   'session.initialize': {
@@ -848,6 +1508,10 @@ export type HandlerMap = {
   'session.messages.list': {
     input: SessionMessagesListInput;
     output: SessionMessagesListOutput;
+  };
+  'session.export': {
+    input: SessionExportSessionMarkdownInput;
+    output: SessionExportSessionMarkdownOutput;
   };
   'session.getModel': {
     input: SessionGetModelInput;
@@ -907,6 +1571,10 @@ export type HandlerMap = {
     input: SessionConfigRemoveInput;
     output: SuccessResponse;
   };
+  'sessions.remove': {
+    input: SessionsRemoveInput;
+    output: SessionsRemoveOutput;
+  };
 
   // Sessions handlers
   'sessions.list': { input: SessionsListInput; output: SessionsListOutput };
@@ -914,6 +1582,14 @@ export type HandlerMap = {
     input: SessionsResumeInput;
     output: SessionsResumeOutput;
   };
+
+  // Skills handlers
+  'skills.list': { input: SkillsListInput; output: SkillsListOutput };
+  'skills.get': { input: SkillsGetInput; output: SkillsGetOutput };
+  'skills.add': { input: SkillsAddInput; output: SkillsAddOutput };
+  'skills.remove': { input: SkillsRemoveInput; output: SkillsRemoveOutput };
+  'skills.preview': { input: SkillsPreviewInput; output: SkillsPreviewOutput };
+  'skills.install': { input: SkillsInstallInput; output: SkillsInstallOutput };
 
   // Slash command handlers
   'slashCommand.list': {
@@ -961,9 +1637,47 @@ export type HandlerMap = {
     input: UtilsDetectAppsInput;
     output: UtilsDetectAppsOutput;
   };
+  'utils.playSound': {
+    input: UtilsPlaySoundInput;
+    output: UtilsPlaySoundOutput;
+  };
+  'utils.notify': {
+    input: UtilsNotifyInput;
+    output: UtilsNotifyOutput;
+  };
 
   // UI Bridge handlers
   toolApproval: { input: ToolApprovalInput; output: ToolApprovalOutput };
+
+  // Snapshot handlers
+  'snapshot.trackFile': {
+    input: SnapshotTrackFileInput;
+    output: SuccessResponse;
+  };
+  'snapshot.create': {
+    input: SnapshotCreateInput;
+    output: SnapshotCreateOutput;
+  };
+  'snapshot.list': {
+    input: SnapshotListInput;
+    output: SnapshotListOutput;
+  };
+  'snapshot.has': {
+    input: SnapshotHasInput;
+    output: SnapshotHasOutput;
+  };
+  'snapshot.rewind': {
+    input: SnapshotRewindInput;
+    output: SnapshotRewindOutput;
+  };
+  'snapshot.previewRewind': {
+    input: SnapshotPreviewRewindInput;
+    output: SnapshotPreviewRewindOutput;
+  };
+  'snapshot.loadFromSession': {
+    input: SnapshotLoadFromSessionInput;
+    output: SuccessResponse;
+  };
 };
 
 // ============================================================================
@@ -978,3 +1692,10 @@ export type HandlerOutput<K extends keyof HandlerMap> = HandlerMap[K]['output'];
 
 /** All valid handler method names */
 export type HandlerMethod = keyof HandlerMap;
+
+export type NodeBridgeHandlers = Partial<{
+  [K in keyof HandlerMap]: (
+    data: HandlerMap[K]['input'],
+    context: any,
+  ) => Promise<HandlerMap[K]['output']> | HandlerMap[K]['output'];
+}>;
